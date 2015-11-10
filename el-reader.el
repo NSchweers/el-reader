@@ -479,6 +479,15 @@ This variable should not be used directly.  It is set by
 ;; functions can be chained together.  In types:
 ;; (token -> pos -> plist) -> (token -> pos -> plist) -> (token -> pos -> plist)
 
+(defun reader/ensure-complete-token (fn)
+  (lambda (token pos)
+    (let ((res (funcall fn token pos)))
+      (cond ((and (slot-value res 'success)
+                  (or (not (string-empty-p (slot-value res 'rest)))
+                      (< (slot-value res 'newpos) (length token))))
+             (reader/make-failed token pos))
+            (t res)))))
+
 (defun reader/parse-seq (&rest fns)
   (when (null fns)
     (error "At least one argument must be given"))
@@ -552,7 +561,7 @@ This variable should not be used directly.  It is set by
                                          (slot-value res 'result))))))))
       (let ((res (funcall fn token pos)))
         (if (not (slot-value res 'success))
-            res
+            (reader/make-result t token pos pos "" (substring token pos) nil)
           (helper (clone res :result (list (slot-value res 'result)))))))))
 
 (defun reader/parse-plus (fn)
@@ -644,33 +653,45 @@ This variable should not be used directly.  It is set by
 
 (defun reader/parse-float (token pos)
   (funcall
-   (reader/parse-alt (reader/parse-seq
-                      (reader/parse-optional #'reader/parse-sign)
-                      (reader/parse-kleene-star #'reader/parse-decimal-digit)
-                      #'reader/parse-decimal-point
-                      (reader/parse-plus #'reader/parse-decimal-digit)
-                      (reader/parse-optional #'reader/parse-exponent))
-                     (reader/parse-seq
-                      (reader/parse-optional #'reader/parse-sign)
-                      (reader/parse-plus #'reader/parse-decimal-digit)
-                      (reader/parse-optional
-                       (reader/parse-seq
-                        #'reader/parse-decimal-point
-                        (reader/parse-kleene-star
-                         #'reader/parse-decimal-digit)))
-                      #'reader/parse-exponent))
+   (reader/ensure-complete-token
+    (reader/parse-alt (reader/parse-seq
+                       (reader/parse-optional #'reader/parse-sign)
+                       (reader/parse-kleene-star #'reader/parse-decimal-digit)
+                       #'reader/parse-decimal-point
+                       (reader/parse-plus #'reader/parse-decimal-digit)
+                       (reader/parse-optional #'reader/parse-exponent))
+                      (reader/parse-seq
+                       (reader/parse-optional #'reader/parse-sign)
+                       (reader/parse-plus #'reader/parse-decimal-digit)
+                       (reader/parse-optional
+                        (reader/parse-seq
+                         #'reader/parse-decimal-point
+                         (reader/parse-kleene-star
+                          #'reader/parse-decimal-digit)))
+                       #'reader/parse-exponent)))
    token pos))
+
+;; (defun reader/parse-float (token pos)
+;;   (funcall
+;;    (reader/parse-seq
+;;     (reader/parse-optional #'reader/parse-sign)
+;;     (reader/parse-kleene-star #'reader/parse-decimal-digit)
+;;     #'reader/parse-decimal-point
+;;     (reader/parse-plus #'reader/parse-decimal-digit)
+;;     (reader/parse-optional #'reader/parse-exponent))
+;;    token pos))
 
 (defun reader/parse-integer (token pos)
   (let ((int (funcall
-              (reader/parse-alt
-               (reader/parse-seq
-                (reader/parse-optional #'reader/parse-sign)
-                (reader/parse-plus #'reader/parse-decimal-digit)
-                #'reader/parse-decimal-point)
-               (reader/parse-seq
-                (reader/parse-optional #'reader/parse-sign)
-                (reader/parse-plus #'reader/parse-digit)))
+              (reader/ensure-complete-token
+               (reader/parse-alt
+                (reader/parse-seq
+                 (reader/parse-optional #'reader/parse-sign)
+                 (reader/parse-plus #'reader/parse-decimal-digit)
+                 #'reader/parse-decimal-point)
+                (reader/parse-seq
+                 (reader/parse-optional #'reader/parse-sign)
+                 (reader/parse-plus #'reader/parse-digit))))
               token pos)))
     (cond ((not (slot-value int 'success)) int)
           ((< (slot-value int 'newpos) (length (slot-value int 'token)))
