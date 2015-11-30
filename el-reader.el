@@ -27,6 +27,8 @@
 ;;; Commentary:
 
 ;; A flexible reader for elisp.  TODO: Add some more commentary.
+;; The reader algorithm is described here:
+;; http://www.lispworks.com/documentation/lw70/CLHS/Body/02_b.htm
 
 ;;; Code
 
@@ -59,6 +61,7 @@
 (setf lexical-binding t)
 
 (require 'cl-lib)
+(require 'eieio)
 (require 'dash)
 (require 'dash-functional)
 ;; (require 'hash-utils)
@@ -67,7 +70,7 @@
 
 (eval-when-compile (require 'cl))
 
-(defun el-reader/ht (&rest args)
+(defun ht (&rest args)
   "Create and return a hashtable.
 
 Keys and values are given alternating in args."
@@ -77,7 +80,7 @@ Keys and values are given alternating in args."
                   (error "Odd number of arguments passed")))
     h))
 
-(cl-define-compiler-macro el-reader/ht (&rest args)
+(cl-define-compiler-macro ht (&rest args)
   "This compiler macro performs loop unrolling.
 
 Unfortunately it does a maximal unroll."
@@ -221,32 +224,81 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
 ;;         24 80 25 81 26 82 27 83 28 84 29 85 30 86 31
 ;;         87 32 88 33 89 34 90 35))))
 
-(cl-defstruct (el-reader/readtable (:conc-name el-reader/rt/))
-  invalid
-  terminating-macro-chars
-  non-terminating-macro-chars
-  (whitespace-chars '(?\s ?\t ?\n ?\e ?\f))
-  single-escape-chars
-  multiple-escape-chars
-  constituent-chars
-  (constituent-fn (lambda (_c) t))
-  (traits (ht))
-  trait-fns
-  ;;  (syntax-types (ht))
-  (default-syntax-type 'constituent)
-  ;; (read-source standard-input)
-  (term-mac-fns (ht))
-  (non-term-mac-fns (ht))
-  (readtable-case :preserve)
-  (char-to-num (ht 48 0 49 1 50 2 51 3 52 4 53 5 54 6 55 7 56 8
-                   57 9 97 10 98 11 99 12 100 13 101 14 102 15
-                   103 16 104 17 105 18 106 19 107 20 108 21 109
-                   22 110 23 111 24 112 25 113 26 114 27 115 28
-                   116 29 117 30 118 31 119 32 120 33 121 34 122
-                   35 65 10 66 11 67 12 68 13 69 14 70 15 71 16
-                   72 17 73 18 74 19 75 20 76 21 77 22 78 23 79
-                   24 80 25 81 26 82 27 83 28 84 29 85 30 86 31
-                   87 32 88 33 89 34 90 35)))
+;; (cl-defstruct (el-reader/readtable (:conc-name el-reader/rt/))
+;;   invalid
+;;   terminating-macro-chars
+;;   non-terminating-macro-chars
+;;   (whitespace-chars '(?\s ?\t ?\n ?\e ?\f))
+;;   single-escape-chars
+;;   multiple-escape-chars
+;;   constituent-chars
+;;   (constituent-fn (lambda (_c) t))
+;;   (traits (ht))
+;;   trait-fns
+;;   ;;  (syntax-types (ht))
+;;   (default-syntax-type 'constituent)
+;;   ;; (read-source standard-input)
+;;   (term-mac-fns (ht))
+;;   (non-term-mac-fns (ht))
+;;   (readtable-case :preserve)
+;;   (char-to-num (ht 48 0 49 1 50 2 51 3 52 4 53 5 54 6 55 7 56 8
+;;                    57 9 97 10 98 11 99 12 100 13 101 14 102 15
+;;                    103 16 104 17 105 18 106 19 107 20 108 21 109
+;;                    22 110 23 111 24 112 25 113 26 114 27 115 28
+;;                    116 29 117 30 118 31 119 32 120 33 121 34 122
+;;                    35 65 10 66 11 67 12 68 13 69 14 70 15 71 16
+;;                    72 17 73 18 74 19 75 20 76 21 77 22 78 23 79
+;;                    24 80 25 81 26 82 27 83 28 84 29 85 30 86 31
+;;                    87 32 88 33 89 34 90 35)))
+
+;;; In COMMON LISP traits are hardwired to the parser, we should not copy this
+;;; mistake.  Also, define a mapping from digits to values.  I.e. make it
+;;; possible for *read-base* = 36 to have Z mean (dec 10) and A (dec 35).
+
+(defclass el-reader/readtable ()
+  ((invalid :initarg :invalid)
+   (terminating-macro-chars :initarg :terminating-macro-chars)
+   (non-terminating-macro-chars :initarg :non-terminating-macro-chars)
+   (whitespace-chars :initarg :whitespace-chars :initform '(?\s ?\t ?\n ?\e ?\f)
+                     :type list)
+   (single-escape-chars :initarg :single-escape-chars)
+   (multiple-escape-chars :initarg :multiple-escape-chars)
+   (constituent-chars :initarg :constituent-chars)
+   (traits :initarg :traits :initform (ht) :type hash-table)
+   (term-mac-fns :initarg :term-mac-fns :initform (ht))
+   (non-term-mac-fns :initarg :non-term-mac-fns :initform (ht))
+   (readtable-case :initarg :readtable-case :initform :preserve)
+   (char-to-num :initarg :char-to-num :initform
+                (ht 48 0 49 1 50 2 51 3 52 4 53 5 54 6 55 7 56 8
+                    57 9 97 10 98 11 99 12 100 13 101 14 102 15
+                    103 16 104 17 105 18 106 19 107 20 108 21 109
+                    22 110 23 111 24 112 25 113 26 114 27 115 28
+                    116 29 117 30 118 31 119 32 120 33 121 34 122
+                    35 65 10 66 11 67 12 68 13 69 14 70 15 71 16
+                    72 17 73 18 74 19 75 20 76 21 77 22 78 23 79
+                    24 80 25 81 26 82 27 83 28 84 29 85 30 86 31
+                    87 32 88 33 89 34 90 35))))
+
+(defmacro el-reader/make-public-accessors (class &optional prefix)
+  (cons 'progn
+        (seq-map
+         (lambda (e)
+           `(progn
+              (defun ,(intern (s-concat (if prefix (symbol-name prefix) "")
+                                        (symbol-name e)))
+                  (obj)
+                ,(s-concat "Extract the element " (symbol-name e) " from OBJ. ")
+                (slot-value obj ',e))
+              (cl-defmethod (setf ,(intern (s-concat
+                                            (if prefix
+                                                (symbol-name prefix)
+                                              "")
+                                            (symbol-name e))))
+                  (new-elt (rt el-reader/readtable))
+                (setf (slot-value obj ',e) new-elt))))
+         (object-slots (make-instance class)))))
+
+(el-reader/make-public-accessors el-reader/readtable el-reader/rt/)
 
 (defclass el-reader/result ()
   ((success :initarg :success :initform nil :type symbol)
@@ -271,50 +323,32 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
   (make-instance 'el-reader/result :token token :pos pos :newpos nil
                  :result-string nil :rest nil :result nil))
 
-;; (cl-defstruct (el-reader/result
-;;                (:conc-name el-reader/result/)
-;;                (:constructor el-reader/make-result (success
-;;                                                  token
-;;                                                  pos
-;;                                                  newpos
-;;                                                  result-string
-;;                                                  rest
-;;                                                  result))
-;;                (:constructor el-reader/make-failed (token pos)))
-;;   success
-;;   token
-;;   pos
-;;   newpos
-;;   result-string
-;;   rest
-;;   result)
+;; (defun el-reader/rt/syntax-type (rt char)
+;;   "Returns a symbol which designates the syntax type of CHAR in RT. "
+;;   (cl-labels
+;;       ((put-syntax-type
+;;           (type)
+;;           (when (cl-member
+;;                  char
+;;                  (funcall (intern (s-concat "el-reader/rt/" (symbol-name type)
+;;                                             "-chars"))
+;;                           *readtable*))
+;;             (if (get-text-property 0 type s)
+;;                 (error "More than one syntax type")
+;;               (put-text-property 0 1 'syntax-type
+;;                                  (adjust-macro-names type) s)))))
+;;     (cond ((el-reader/rt/terminating-macro-char-p rt char)
+;;            'terminating-macro-char)
+;;           ((el-reader/rt/non-terminating-macro-char-p rt char)
+;;            'non-terminating-macro-char))))
 
-(defun el-reader/rt/syntax-type (rt char)
-  "Returns a symbol which designates the syntax type of CHAR in RT. "
-  (cl-labels
-      ((put-syntax-type
-          (type)
-          (when (cl-member
-                 char
-                 (funcall (intern (s-concat "el-reader/rt/" (symbol-name type)
-                                            "-chars"))
-                          *readtable*))
-            (if (get-text-property 0 type s)
-                (error "More than one syntax type")
-              (put-text-property 0 1 'syntax-type
-                                 (adjust-macro-names type) s)))))
-    (cond ((el-reader/rt/terminating-macro-char-p rt char)
-           'terminating-macro-char)
-          ((el-reader/rt/non-terminating-macro-char-p rt char)
-           'non-terminating-macro-char))))
-
-(defun el-reader/rt//not-non-constituent-p (rt char)
-  (let ((l (list #'el-reader/rt/terminating-macro-chars
-                 #'el-reader/rt/non-terminating-macro-chars
-                 #'el-reader/rt/whitespace-chars
-                 #'el-reader/rt/single-escape-chars
-                 #'el-reader/rt/multiple-escape-chars)))
-    (-all? #'null (mapcar (lambda (fn) (member char (funcall fn rt))) l))))
+;; (defun el-reader/rt//not-non-constituent-p (rt char)
+;;   (let ((l (list #'el-reader/rt/terminating-macro-chars
+;;                  #'el-reader/rt/non-terminating-macro-chars
+;;                  #'el-reader/rt/whitespace-chars
+;;                  #'el-reader/rt/single-escape-chars
+;;                  #'el-reader/rt/multiple-escape-chars)))
+;;     (-all? #'null (mapcar (lambda (fn) (member char (funcall fn rt))) l))))
 
 
 (defun el-reader/rt/constituentp (rt char)
@@ -347,7 +381,7 @@ CONSTITUENT-CHARS."
   (not (null (member char (el-reader/rt/multiple-escape-chars rt)))))
 
 (defun make-elisp-readtable ()
-  (make-el-reader/readtable
+  (make-instance 'el-reader/readtable
    :whitespace-chars
    '(?\s ?\t ?\n ?\e ?\f)
    ;; We don’t support escaping of token characters yet!  This is not really
@@ -398,6 +432,12 @@ separate function instead of an argument is beyond me.
 This variable should not be used directly.  It is set by
 `read-preserving-whitespace' before calling `read'.")
 
+(defvar *el-reader//allow-single-dot-symbol* nil
+  "Whether to allow a symbol named `.'.
+Do not use this variable!  It is used internally in the reader.
+Only a function called by `read' and the list reading code use
+it.  It shall stay that way!")
+
 (defun el-reader/defaults-to-str-props (char)
   (let ((s (char-to-string char)))
     (cl-labels
@@ -417,9 +457,10 @@ This variable should not be used directly.  It is set by
                 (error "More than one syntax type")
               (put-text-property 0 1 'syntax-type
                                  (adjust-macro-names type) s))))
-         (put-traits
-          (type)
-          ))
+         ;; (put-traits
+         ;;  (type)
+         ;;  )
+         )
       (--each '(terminating-macro
                 non-terminating-macro
                 constituent
@@ -435,9 +476,6 @@ This variable should not be used directly.  It is set by
                 collect k)
        s)
       s)))
-
-;;; The reader algorithm is described here:
-;;; http://www.lispworks.com/documentation/lw70/CLHS/Body/02_b.htm
 
 ;; get-macro-character char &optional readtable => function, non-terminating-p
 (cl-defun el-reader/get-macro-character (char &optional
@@ -668,6 +706,82 @@ This variable should not be used directly.  It is set by
   (let ((first-base (slot-value (car digits) 'base)))
     (--all? (= first-base (slot-value it 'base)) (cdr digits))))
 
+(defun el-reader/proper-float-p (float)
+  (let ((res (slot-value float 'result)))
+    (and (-all? #'el-reader/digit-p (second res))
+         (= (slot-value (second res) 'base) 10)
+         (el-reader/same-base-p (append (second res)
+                                        (fourth res))))))
+
+(defun el-reader/adjust-for-sign (num sign)
+  (let ((sign-fn (if (and (el-reader/sign-p sign)
+                          (eq (slot-value sign 'value)
+                              'minus-sign))
+                     #'- #'identity)))
+    (funcall sign-fn num)))
+
+(defun el-reader/digit-list->int (digits)
+  (when (and (not (null digits)) (listp digits) (el-reader/same-base-p digits))
+    (let ((base (slot-value (car digits) 'base))
+          (digits (reverse (-map (lambda (x) (slot-value x 'value))
+                                 digits))))
+      (car (--reduce-from
+            (let ((val (car acc))
+                  (place (cadr acc)))
+              (list (+ val (* it (expt base place)))
+                    (1+ place)))
+            (list (car digits) 1) (cdr digits))))))
+
+(defun el-reader/make-int (sign-and-digits)
+  (el-reader/adjust-for-sign
+   (el-reader/digit-list->int
+    (cadr sign-and-digits))
+   (car sign-and-digits)))
+
+;; (defun el-reader/dec-places (int)
+;;   (1+ (floor (log10 int))))
+
+;; (defun el-reader/make-0-point (sign-and-dec-digits)
+;;   (* (el-reader/make-int (el-reader/drop-leading-zeros sign-and-dec-digits))
+;;      (expt 10 (- (1- (length dec-digits))))))
+
+;;; TODO: This is completely bokers!  The best might as well be to strip off the
+;;; sign before using this function.  Also, check where to strip off zeros, as
+;;; these can be significant, even leading ones (if after a decimal point).
+
+;; (defun el-reader/drop-zeros (digits leading?)
+;;   (let* ((first-elem-sign? (if (el-reader/digit-p (car digits)) nil
+;;                              (list (car digits))))
+;;          (res (-drop-while (lambda (d) (zerop (slot-value d 'value)))
+;;                            (let ((tmp (if first-elem-sign? (cdr digits)
+;;                                         digits)))
+;;                              (if leading? tmp (reverse tmp))))))
+;;     (if first-elem-sign?
+;;         (cons (car first-elem-sign?) res)
+;;       res)))
+
+;; (defun el-reader/drop-leading-zeros (digits)
+;;   (let* ((first-elem-sign? (if (el-reader/digit-p (car digits)) nil
+;;                              (list (car digits))))
+;;          (res (-drop-while (lambda (d) (zerop (slot-value d 'value)))
+;;                            (if first-elem-sign? (cdr digits) digits))))
+;;     (if first-elem-sign?
+;;         (cons (car first-elem-sign?) res)
+;;       res)))
+
+(defun el-reader/drop-trailing-zeros (digits)
+  (reverse (el-reader/drop-leading-zeros (reverse digits))))
+
+(defun el-reader/drop-leading-zeros (digits)
+  "DIGITS is a seq of digit objects (`el-reader/digit').
+Leading zeros are dropped, the rest is returned as is."
+  (seq-drop-while (lambda (d) (zerop (slot-value d 'value)))
+                  digits))
+
+(defun el-reader/drop-trailing-zeros (digits)
+  "See `el-reader/drop-leading-zeros'."
+  (seq-reverse (el-reader/drop-leading-zeros (seq-reverse digits))))
+
 (defun el-reader/parse-float (token pos)
   (let* ((flt (funcall
                (el-reader/ensure-complete-token
@@ -689,7 +803,51 @@ This variable should not be used directly.  It is set by
                   #'el-reader/parse-exponent)))
                token pos))
          (res (slot-value flt 'result)))
-    ))
+    ;;; NB: “Left” refers to the grammar given here:
+    ;;; http://www.lispworks.com/documentation/lw70/CLHS/Body/02_ca.htm Left
+    ;;; mereley means that it is the first case, rather than the latter.  This
+    ;;; is why the extraction of elements of the parse tree is slightly
+    ;;; different for the two cases.
+    (cl-labels
+        ((get-sign-fn (num)
+                      (let ((sign (car num)))
+                        (if (and (el-reader/sign-p sign)
+                                 (eq (slot-value sign 'value) 'minus-sign))
+                            #'-
+                          #'identity)))
+         (get-int-part
+          (dec-digits)
+          (el-reader/digit-list->int (el-reader/drop-leading-zeros dec-digits)))
+         (get-post-dec-places
+          (mantissa)
+          (let* ((digits (el-reader/drop-trailing-zeros mantissa))
+                 (digit-count (length digits))
+                 (int (or (get-int-part digits) 0.0)))
+            (* int (expt 10 (- digit-count)))))
+         (fe (float)
+             (let* ((left (not (or (null (third float)) (and (listp (third float))
+                                      (= (length (third float)) 2)))))
+                    (dec-digits (cadr float))
+                    (dec-point? (if left
+                                    (third float)
+                                  (car (third float))))
+                    (mantissa (if left (fourth float)
+                                (second (third float))))
+                    (exponent (if left (fifth float) (fourth float))))
+               (* (funcall
+                   (get-sign-fn float)
+                   (+ (get-int-part dec-digits)
+                      (get-post-dec-places mantissa)))
+                  (if exponent
+                      (expt 10 (funcall (get-sign-fn (list (second exponent)))
+                                        (get-int-part (third exponent))))
+                    1.0)))))
+      (clone
+       flt
+       :result
+       (make-instance
+        'el-reader/syntax-element
+        :value (fe (slot-value flt 'result)))))))
 
 (defun el-reader/parse-integer (token pos)
   (let ((int (funcall
@@ -703,30 +861,12 @@ This variable should not be used directly.  It is set by
                  (el-reader/parse-optional #'el-reader/parse-sign)
                  (el-reader/parse-plus #'el-reader/parse-digit))))
               token pos)))
-    (cond ((not (slot-value int 'success)) int)
-          ((and (listp (slot-value int 'result))
-                (-all? #'el-reader/digit-p (cadr (slot-value int 'result)))
-                (-all? (lambda (x) (= (slot-value x 'base)
-                                      (slot-value
-                                       (caadr (slot-value int 'result))
-                                       'base)))
-                       (cadr (slot-value int 'result))))
-           (let ((base (slot-value (caadr (slot-value int 'result))
-                                   'base))
-                 (digits (reverse (-map (lambda (x) (slot-value x 'value))
-                                        (cadr (slot-value int 'result))))))
-             (clone
-              int
-              :result
-              (make-instance
-               'el-reader/syntax-element
-               :value (car
-                       (--reduce-from
-                        (let ((val (car acc))
-                              (place (cadr acc)))
-                          (list (+ val (* it (expt base place)))
-                                (1+ place)))
-                        (list (car digits) 1) (cdr digits))))))))))
+    (clone
+     int
+     :result
+     (make-instance
+      'el-reader/syntax-element
+      :value (el-reader/make-int (slot-value int 'result))))))
 
 (defun el-reader/parse-numeric-token (token pos)
   (funcall
@@ -745,12 +885,13 @@ This variable should not be used directly.  It is set by
                              (1- (length token)) (length token))
                          :radix *read-base*))))
 
-;;; In COMMON LISP traits are hardwired to the parser, we should not copy this
-;;; mistake.  Also, define a mapping from digits to values.  I.e. make it
-;;; possible for *read-base* = 36 to have Z mean (dec 10) and A (dec 35).
+(defun el-reader/parse-symbol (token pos)
+  (el-reader/make-result t token pos (- (length token) pos)
+                         (substring token pos) ""
+                         (intern )))
 
 (defun el-reader/process-token (token)
-  (el-reader/parse-float token 0))
+  (el-reader/parse-numeric-token token 0))
 
 (define-error 'reader-error "The reader encountered an error")
 
