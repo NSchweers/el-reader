@@ -362,8 +362,8 @@ CONSTITUENT-CHARS."
 (defun el-reader/rt/invalidp (rt char)
   "Return non-nil if char is both constituent and invalid."
   (or (not (null (member char (gethash 'invalid (el-reader/rt/traits rt)))))
-      (-any? (-compose #'not #'null)
-             (funcall (apply #'-juxt (el-reader/rt/trait-fns rt)) char))))
+      (seq-some (-compose #'not #'null)
+                (funcall (apply #'-juxt (el-reader/rt/trait-fns rt)) char))))
 
 (defun el-reader/rt/whitespacep (rt char)
   (not (null (member char (el-reader/rt/whitespace-chars rt)))))
@@ -456,18 +456,22 @@ it.  It shall stay that way!")
             (if (get-text-property 0 type s)
                 (error "More than one syntax type")
               (put-text-property 0 1 'syntax-type
-                                 (adjust-macro-names type) s))))
-         ;; (put-traits
-         ;;  (type)
-         ;;  )
-         )
-      (--each '(terminating-macro
-                non-terminating-macro
-                constituent
-                whitespace
-                single-escape
-                multiple-escape)
-        (put-syntax-type it))
+                                 (adjust-macro-names type) s)))))
+      (seq-do
+       (lambda (sym) (put-syntax-type sym))
+       '(terminating-macro
+         non-terminating-macro
+         constituent
+         whitespace
+         single-escape
+         multiple-escape))
+      ;; (--each '(terminating-macro
+      ;;           non-terminating-macro
+      ;;           constituent
+      ;;           whitespace
+      ;;           single-escape
+      ;;           multiple-escape)
+      ;;   (put-syntax-type it))
       (put-text-property
        0 1 'traits 
        (cl-loop for k being the hash-keys in (el-reader/rt/traits *readtable*)
@@ -542,7 +546,7 @@ it.  It shall stay that way!")
   (when (null fns)
     (error "At least one argument must be given"))
   (lambda (token pos)
-    (let ((r (-reduce-from
+    (let ((r (seq-reduce
               (lambda (a f)
                 (if (slot-value a 'success)
                     (with-slots ((a-token token)
@@ -567,9 +571,9 @@ it.  It shall stay that way!")
                                (cons tmp-result a-result))
                             (el-reader/make-failed token pos)))))
                   (el-reader/make-failed token pos)))
+              (cdr fns)
               (let ((tmp (funcall (car fns) token pos)))
-                (clone tmp :result (list (slot-value tmp 'result))))
-              (cdr fns))))
+                (clone tmp :result (list (slot-value tmp 'result)))))))
       (clone r :result (reverse (slot-value r 'result))))))
 
 (defun el-reader/parse-alt (&rest fns)
@@ -625,7 +629,7 @@ it.  It shall stay that way!")
 
 (defun el-reader/parse-exponent-marker (token pos)
   (if (eq (get-text-property pos 'syntax-type token) 'constituent)
-      (-if-let (r (-filter
+      (-if-let (r (seq-filter
                    (-compose (-partial (lambda (s1 s2)
                                          (if (string-suffix-p s1 s2) s2))
                                        "exponent-marker")
@@ -643,7 +647,7 @@ it.  It shall stay that way!")
 
 (defun el-reader/parse-sign (token pos)
   (if (eq (get-text-property pos 'syntax-type token) 'constituent)
-      (-if-let (r (-filter
+      (-if-let (r (seq-filter
                    (-compose (-partial
                               (lambda (s1 s2) (if (string-suffix-p s1 s2) s2))
                               "sign")
@@ -704,11 +708,12 @@ it.  It shall stay that way!")
 
 (defun el-reader/same-base-p (digits)
   (let ((first-base (slot-value (car digits) 'base)))
-    (--all? (= first-base (slot-value it 'base)) (cdr digits))))
+    (seq-every-p (lambda (it) (= first-base (slot-value it 'base)))
+                 (cdr digits))))
 
 (defun el-reader/proper-float-p (float)
   (let ((res (slot-value float 'result)))
-    (and (-all? #'el-reader/digit-p (second res))
+    (and (seq-every-p #'el-reader/digit-p (second res))
          (= (slot-value (second res) 'base) 10)
          (el-reader/same-base-p (append (second res)
                                         (fourth res))))))
@@ -723,14 +728,15 @@ it.  It shall stay that way!")
 (defun el-reader/digit-list->int (digits)
   (when (and (not (null digits)) (listp digits) (el-reader/same-base-p digits))
     (let ((base (slot-value (car digits) 'base))
-          (digits (reverse (-map (lambda (x) (slot-value x 'value))
-                                 digits))))
-      (car (--reduce-from
-            (let ((val (car acc))
-                  (place (cadr acc)))
-              (list (+ val (* it (expt base place)))
-                    (1+ place)))
-            (list (car digits) 1) (cdr digits))))))
+          (digits (reverse (seq-map (lambda (x) (slot-value x 'value))
+                                    digits))))
+      (car (seq-reduce
+            (lambda (acc it)
+              (let ((val (car acc))
+                    (place (cadr acc)))
+                (list (+ val (* it (expt base place)))
+                      (1+ place))))
+            (cdr digits) (list (car digits) 1))))))
 
 (defun el-reader/make-int (sign-and-digits)
   (el-reader/adjust-for-sign
@@ -886,9 +892,14 @@ Leading zeros are dropped, the rest is returned as is."
                          :radix *read-base*))))
 
 (defun el-reader/parse-symbol (token pos)
-  (el-reader/make-result t token pos (- (length token) pos)
-                         (substring token pos) ""
-                         (intern )))
+  (cl-labels ((escaped-dot-p
+               (str pos)
+               (get-text-property pos 'escapedp str))) 
+   (let (name (substring-no-properties token pos))
+     (if (seq-every-p #'escaped-dot-p ) 
+         (el-reader/make-result t token pos (- (length token) pos)
+                                (substring token pos) ""
+                                (intern ))))))
 
 (defun el-reader/process-token (token)
   (el-reader/parse-numeric-token token 0))
@@ -915,6 +926,10 @@ Leading zeros are dropped, the rest is returned as is."
                                  (put-text-property
                                   0 1 'escaped t z)
                                  z))
+         (put-escaped-prop (s &optional (begin 0) (end (length s)))
+                           (put-text-property
+                            begin end 'escapedp t s)
+                           s)
          (switch-case (c) (if (= (upcase c) c)
                               (downcase c)
                             (upcase c)))
@@ -949,7 +964,7 @@ Leading zeros are dropped, the rest is returned as is."
                  (let ((y (el-reader/getch input-stream)))
                    (cond
                     ((funcall (-orfn
-                               (-map
+                               (seq-map
                                 (lambda (fn)
                                   (-partial fn *readtable*))
                                 (list
@@ -959,11 +974,12 @@ Leading zeros are dropped, the rest is returned as is."
                                  #'el-reader/rt/whitespace-char-p)))
                               y)
                      (step-9
-                      input-stream (force-alphabetic y)))
+                      input-stream (put-escaped-prop (force-alphabetic y))))
                     ((el-reader/rt/single-escape-char-p *readtable* y)
                      (step-9
-                      input-stream (force-alphabetic
-                                    (el-reader/getch input-stream))))
+                      input-stream (put-escaped-prop
+                                    (force-alphabetic
+                                     (el-reader/getch input-stream)))))
                     ((el-reader/rt/multiple-escape-char-p *readtable* y)
                      (step-8 token))
                     ((el-reader/rt/invalidp *readtable* y)
@@ -981,17 +997,19 @@ Leading zeros are dropped, the rest is returned as is."
                  (car it)
                (el-reader/read input-stream eof-error-p eof-value recursive-p)))
             ((el-reader/rt/single-escape-char-p *readtable* x)
-             (signal 'reader-error "Single escape is not yet supported")
-             (let ((y (el-reader/getch input-stream)))
-               ;; Treat y as a constituent alphabetic (no other traits!) and
-               ;; begin reading a token (step 8).
-               (step-8
-                input-stream (force-alphabetic y))))
+             ;; (signal 'reader-error "Single escape is not yet supported")
+             (step-8
+              input-stream
+              (put-escaped-prop
+               (force-alphabetic (el-reader/getch input-stream)))))
             ((el-reader/rt/multiple-escape-char-p *readtable* x)
-             (signal 'reader-error "Multiple escape is not yet supported")
-             (let ((y (el-reader/getch input-stream)))
-               ;; Begin an empty token and proceeed with step 9.
-               (step-9 input-stream "")))
+             ;; (signal 'reader-error "Multiple escape is not yet supported")
+             ;; Begin an empty token and proceeed with step 9.
+             (step-9 input-stream "")
+             ;; (let ((y (el-reader/getch input-stream)))
+             ;;   ;; Begin an empty token and proceeed with step 9.
+             ;;   (step-9 input-stream ""))
+             )
             ((el-reader/rt/constituentp *readtable* x)
              (step-8 input-stream (el-reader/defaults-to-str-props x)))
             (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!"))))))
