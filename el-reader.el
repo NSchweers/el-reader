@@ -22,7 +22,7 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-;; Package-Requires ((seq 1.7) (dash 20151021.113) (dash-functional 20150828.413) (tco 20140412.612) (emacs 25.0))
+;; Package-Requires ((seq 1.7) (dash 20151021.113) (dash-functional 20150828.413) (emacs 25.0))
 
 ;;; Commentary:
 
@@ -66,7 +66,6 @@
 (require 'dash-functional)
 ;; (require 'hash-utils)
 (require 'seq)
-(require 'tco)
 
 (eval-when-compile (require 'cl))
 
