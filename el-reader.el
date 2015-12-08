@@ -255,14 +255,17 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
 ;;; possible for *read-base* = 36 to have Z mean (dec 10) and A (dec 35).
 
 (defclass el-reader/readtable ()
-  ((invalid :initarg :invalid)
-   (terminating-macro-chars :initarg :terminating-macro-chars)
-   (non-terminating-macro-chars :initarg :non-terminating-macro-chars)
+  ((invalid :initarg :invalid :initform nil :type list)
+   (terminating-macro-chars :initarg :terminating-macro-chars :initform nil
+                            :type list)
+   (non-terminating-macro-chars :initarg :non-terminating-macro-chars
+                                :initform nil :type list)
    (whitespace-chars :initarg :whitespace-chars :initform '(?\s ?\t ?\n ?\e ?\f)
                      :type list)
-   (single-escape-chars :initarg :single-escape-chars)
-   (multiple-escape-chars :initarg :multiple-escape-chars)
-   (constituent-chars :initarg :constituent-chars)
+   (single-escape-chars :initarg :single-escape-chars :initform nil :type list)
+   (multiple-escape-chars :initarg :multiple-escape-chars :initform nil
+                          :type list)
+   (constituent-chars :initarg :constituent-chars :initform nil :type list)
    (traits :initarg :traits :initform (ht) :type hash-table)
    (term-mac-fns :initarg :term-mac-fns :initform (ht))
    (non-term-mac-fns :initarg :non-term-mac-fns :initform (ht))
@@ -363,6 +366,10 @@ CONSTITUENT-CHARS."
   (or (not (null (member char (gethash 'invalid (el-reader/rt/traits rt)))))
       (seq-some (-compose #'not #'null)
                 (funcall (apply #'-juxt (el-reader/rt/trait-fns rt)) char))))
+
+(defun el-reader/rt/invalidp (rt char)
+  "Return non-nil if char is both constituent and invalid."
+  (not (null (member char (gethash 'invalid (el-reader/rt/traits rt))))))
 
 (defun el-reader/rt/whitespacep (rt char)
   (not (null (member char (el-reader/rt/whitespace-chars rt)))))
@@ -847,12 +854,14 @@ Leading zeros are dropped, the rest is returned as is."
                       (expt 10 (funcall (get-sign-fn (list (second exponent)))
                                         (get-int-part (third exponent))))
                     1.0)))))
-      (clone
-       flt
-       :result
-       (make-instance
-        'el-reader/syntax-element
-        :value (fe (slot-value flt 'result)))))))
+      (if (slot-value flt 'success)
+          (clone
+           flt
+           :result
+           (make-instance
+            'el-reader/syntax-element
+            :value (fe (slot-value flt 'result))))
+        flt))))
 
 (defun el-reader/parse-integer (token pos)
   (let ((int (funcall
@@ -866,48 +875,96 @@ Leading zeros are dropped, the rest is returned as is."
                  (el-reader/parse-optional #'el-reader/parse-sign)
                  (el-reader/parse-plus #'el-reader/parse-digit))))
               token pos)))
-    (clone
-     int
-     :result
-     (make-instance
-      'el-reader/syntax-element
-      :value (el-reader/make-int (slot-value int 'result))))))
+    (if (slot-value int 'success)
+        (clone
+         int
+         :result
+         (make-instance
+          'el-reader/syntax-element
+          :value (el-reader/make-int (slot-value int 'result))))
+      int)))
 
 (defun el-reader/parse-numeric-token (token pos)
   (funcall
    (el-reader/parse-alt #'el-reader/parse-integer
-                     #'el-reader/parse-float)
+                        #'el-reader/parse-float)
    token pos))
 
-(defun el-reader/try-parse-number (token pos)
-  (el-reader/make-result t token pos (length token) token ""
-                      (if (and (s-contains? "." (substring token pos))
-                               (not (s-suffix? "." (substring token pos))))
-                          (string-to-number (substring token pos) 10)
-                        (cl-parse-integer
-                         token :start pos :end
-                         (if (s-suffix? "." (substring token pos))
-                             (1- (length token)) (length token))
-                         :radix *read-base*))))
+;; (defun el-reader/try-parse-number (token pos)
+;;   (el-reader/make-result t token pos (length token) token ""
+;;                       (if (and (s-contains? "." (substring token pos))
+;;                                (not (s-suffix? "." (substring token pos))))
+;;                           (string-to-number (substring token pos) 10)
+;;                         (cl-parse-integer
+;;                          token :start pos :end
+;;                          (if (s-suffix? "." (substring token pos))
+;;                              (1- (length token)) (length token))
+;;                          :radix *read-base*))))
 
-(defun el-reader/parse-symbol (token pos)
-  (cl-labels ((escaped-dot-p
-               (str pos)
-               (get-text-property pos 'escapedp str))) 
-   (let (name (substring-no-properties token pos))
-     (if (seq-every-p #'escaped-dot-p ) 
-         (el-reader/make-result t token pos (- (length token) pos)
-                                (substring token pos) ""
-                                (intern ))))))
+;; (defclass el-reader//string-wrapper ()
+;;   ((string :initarg :string :initform "")))
 
-(defun el-reader/process-token (token)
-  (el-reader/parse-numeric-token token 0))
+;; (cl-defmethod seq-elt ((sequence el-reader//string-wrapper) n)
+;;   (substring (slot-value sequence 'string) n (1+ n)))
+
+;; (cl-defmethod seq-length ((sequence el-reader//string-wrapper))
+;;   (length (slot-value sequence 'string)))
+
+;; (cl-defmethod seq-do (function (sequence el-reader//string-wrapper))
+;;   (dotimes (i (length (slot-value sequence 'string)))
+;;     (funcall function (seq-elt sequence i))))
+
+;; (cl-defmethod seq-p ((sequence el-reader//string-wrapper))
+;;   (el-reader//string-wrapper-p sequence))
+
+;; (cl-defmethod seq-subseq ((sequence el-reader//string-wrapper)
+;;                           start &optional end)
+;;   (make-instance
+;;    'el-reader//string-wrapper
+;;    :string (substring (slot-value sequence 'string) start end)))
+
+;; (cl-defmethod seq-into-sequence ((sequence el-reader//string-wrapper))
+;;   sequence)
+
+;; (cl-defmethod seq-copy ((sequence el-reader//string-wrapper))
+;;   (make-instance
+;;    'el-reader//string-wrapper
+;;    (substring sequence)))
+
+(defun el-reader//map-string-as-substrings (fn token)
+  "Works like `mapcar' on a string, yet passes the chars as singleton strings,
+leaving the properties intact.  The result is a list of the results, in order."
+  (let ((res nil))
+    (dotimes (i (length token))
+      (push (funcall fn (substring token i (1+ i)))
+            res))
+    (seq-reverse res)))
 
 (define-error 'reader-error "The reader encountered an error")
 
+(defun el-reader/parse-symbol (token pos)
+  (when (not (zerop pos))
+    (warn "POS is nonzero, this probably shouldn’t happen!"))
+  (cl-labels ((escaped-p
+               (str pos)
+               (get-text-property pos 'escapedp str)))
+    (let ( (name (substring-no-properties token pos)))
+      (if (and (string= name ".")
+               (not (get-text-property pos 'escapedp token))
+               (not *el-reader//allow-single-dot-symbol*))
+          (signal 'reader-error "invalid-read-syntax: \".\"")
+        (intern name))))) ;TODO: possibly build in package support.  This would
+                          ;need a hook of some sort.
+
+(defun el-reader/process-token (token)
+  (let ((num? (el-reader/parse-numeric-token token 0)))
+    (if (slot-value num? 'success)
+        (slot-value (slot-value num? 'result) 'value)
+      (el-reader/parse-symbol token 0))))
+
 ;;;###autoload
 (cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
-                                 recursive-p)
+                                    recursive-p)
   (let* ((input-stream (el-reader/get-getch-state input-stream))
          (x (condition-case c
                 (el-reader/getch input-stream)
@@ -923,7 +980,7 @@ Leading zeros are dropped, the rest is returned as is."
                                  (put-text-property
                                   0 1 'traits '(alphabetic) z)
                                  (put-text-property
-                                  0 1 'escaped t z)
+                                  0 1 'escapedp t z)
                                  z))
          (put-escaped-prop (s &optional (begin 0) (end (length s)))
                            (put-text-property
