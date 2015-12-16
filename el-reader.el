@@ -278,7 +278,11 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
                             :type list)
    (non-terminating-macro-chars :initarg :non-terminating-macro-chars
                                 :initform nil :type list)
-   (whitespace-chars :initarg :whitespace-chars :initform '(?\s ?\t ?\n ?\e ?\f)
+   ;; Include as many whitespace chars as possible.  Here we have the regular
+   ;; space (?\s -- 32), nobreak space (?\  -- 160) and thin space (?\  --
+   ;; 8239).
+   (whitespace-chars :initarg :whitespace-chars
+                     :initform '(?\s ?\t ?\n ?\e ?\f ?\  ?\ )
                      :type list)
    (single-escape-chars :initarg :single-escape-chars :initform nil :type list)
    (multiple-escape-chars :initarg :multiple-escape-chars :initform nil
