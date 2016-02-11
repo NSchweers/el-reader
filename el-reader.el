@@ -1166,6 +1166,42 @@ leaving the properties intact.  The result is a list of the results, in order."
 
 (el-reader/set-macro-character ?\; #'el-reader/read-comment)
 
+(cl-defun el-reader/make-dispatching-function (&optional (readtable *readtable*))
+  (let ((macro-funs (make-hash-table)))
+    ;; Note that the arguments to set must be a key, a function, and optionally
+    ;; a boolean, to indicate whether key shall be non-terminating (non-nil) or
+    ;; terminating (nil).
+    (lambda (stream char &rest closure-args)
+      (-let [(action var val opt-val) closure-args]
+        (cond ((eq action :get)
+               (gethash var macro-funs))
+              ((eq action :set)
+               (setf (gethash var macro-funs) (list val opt-val)))
+              ((and (not (and action var val))
+                    (or action var val))
+               (error "Invalid args"))
+              (t
+               (let ((backup (make-hash-table)))
+                 (cl-loop for k being the hash-keys in macro-funs using (hash-value f)
+                          do (-let [(f term) f]
+                               (setf (gethash k backup)
+                                     (el-reader/get-macro-character k readtable))
+                               (el-reader/set-macro-character
+                                k f term readtable)))
+                 (unwind-protect
+                     (el-reader/read stream t nil t)
+                   (cl-loop for k being the hash-keys in backup using
+                            (hash-value f) do
+                            (-let [(f term) f]
+                              (el-reader/set-macro-character
+                               k f term readtable)))))))))))
+
+(defun el-reader/get-dispatch-macro-character (disp-char sub-char &optional
+                                                         readtable))
+
+(defun el-reader/set-dispatch-macro-character (disp-char sub-char new-function
+                                                         &optional readtable))
+
 ;;;###autoload
 (cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
                                     recursive-p)
