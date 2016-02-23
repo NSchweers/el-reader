@@ -59,6 +59,9 @@
 ;;      ,@body))
 
 (setf lexical-binding t)
+;;;Emacs (especially org-mode) is sometimes a little eratic when it comes to
+;;;variables defined with -*- syntax (see first line).  This is why `setf' is
+;;;used here.
 
 (require 'cl-lib)
 (require 'eieio)
@@ -189,95 +192,12 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
   ((char :initarg :char :type character)
    (fn :initarg :fn)))
 
-;; (defclass el-reader/readtable ()
-;;   ((invalid
-;;     :initarg :invalid :initform nil :type list
-;;     :documentation
-;;     "A list of invalid characters.  Note that there is also a
-;;   constituent trait named `invalid'.")
-;;    (terminating-macro-chars
-;;     :initarg :terminating-macro-chars :initform nil :type list
-;;     :documentation
-;;     "A list of characters which are terminating macro characters.")
-;;    (non-terminating-macro-chars
-;;     :initarg :non-terminating-macro-chars :initform nil :type list
-;;     :documentation
-;;     "")
-;;    (whitespace-chars
-;;     :initarg :whitespace-chars :initform '(?\s ?\t ?\n ?\e ?\f) :type list
-;;     :documentation
-;;     "")
-;;    (single-escape-chars
-;;     :initarg :single-escape-chars :initform nil :type list
-;;     :documentation
-;;     "")
-;;    (multiple-escape-chars
-;;     :initarg :multiple-escape-chars :initform nil :type list
-;;     :documentation
-;;     "")
-;;    (constituent-chars
-;;     :initarg :constituent-chars :initform nil :type list
-;;     :documentation
-;;     "")
-;;    (traits
-;;     :initarg :traits :initform (ht))
-;;    (default-syntax-type
-;;      :initarg :default-syntax-type :initform 'constituent)
-;;    (term-mac-fns
-;;     :initarg :term-mac-fns :initform (ht))
-;;    (non-term-mac-fns
-;;     :initarg :non-term-mac-fns :initform (ht))
-;;    (readtable-case
-;;     :initarg :readtable-case :initform :preserve)
-;;    (char-to-num
-;;     :initarg :char-to-num :initform
-;;     (ht 48 0 49 1 50 2 51 3 52 4 53 5 54 6 55 7 56 8
-;;         57 9 97 10 98 11 99 12 100 13 101 14 102 15
-;;         103 16 104 17 105 18 106 19 107 20 108 21 109
-;;         22 110 23 111 24 112 25 113 26 114 27 115 28
-;;         116 29 117 30 118 31 119 32 120 33 121 34 122
-;;         35 65 10 66 11 67 12 68 13 69 14 70 15 71 16
-;;         72 17 73 18 74 19 75 20 76 21 77 22 78 23 79
-;;         24 80 25 81 26 82 27 83 28 84 29 85 30 86 31
-;;         87 32 88 33 89 34 90 35))))
-
-;; (cl-defstruct (el-reader/readtable (:conc-name el-reader/rt/))
-;;   invalid
-;;   terminating-macro-chars
-;;   non-terminating-macro-chars
-;;   (whitespace-chars '(?\s ?\t ?\n ?\e ?\f))
-;;   single-escape-chars
-;;   multiple-escape-chars
-;;   constituent-chars
-;;   (constituent-fn (lambda (_c) t))
-;;   (traits (ht))
-;;   trait-fns
-;;   ;;  (syntax-types (ht))
-;;   (default-syntax-type 'constituent)
-;;   ;; (read-source standard-input)
-;;   (term-mac-fns (ht))
-;;   (non-term-mac-fns (ht))
-;;   (readtable-case :preserve)
-;;   (char-to-num (ht 48 0 49 1 50 2 51 3 52 4 53 5 54 6 55 7 56 8
-;;                    57 9 97 10 98 11 99 12 100 13 101 14 102 15
-;;                    103 16 104 17 105 18 106 19 107 20 108 21 109
-;;                    22 110 23 111 24 112 25 113 26 114 27 115 28
-;;                    116 29 117 30 118 31 119 32 120 33 121 34 122
-;;                    35 65 10 66 11 67 12 68 13 69 14 70 15 71 16
-;;                    72 17 73 18 74 19 75 20 76 21 77 22 78 23 79
-;;                    24 80 25 81 26 82 27 83 28 84 29 85 30 86 31
-;;                    87 32 88 33 89 34 90 35)))
-
 ;;; In COMMON LISP traits are hardwired to the parser, we should not copy this
 ;;; mistake.  Also, define a mapping from digits to values.  I.e. make it
 ;;; possible for *read-base* = 36 to have Z mean (dec 10) and A (dec 35).
 
 (defclass el-reader/readtable ()
   ((invalid-chars :initarg :invalid :initform nil :type list)
-   ;; (terminating-macro-chars :initarg :terminating-macro-chars :initform nil
-   ;;                          :type list)
-   ;; (non-terminating-macro-chars :initarg :non-terminating-macro-chars
-   ;;                              :initform nil :type list)
    ;; Include as many whitespace chars as possible.  Here we have the regular
    ;; space (?\s -- 32), nobreak space (?\  -- 160) and thin space (?\  --
    ;; 8239).
@@ -337,11 +257,13 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
                                            (readtable *readtable*))
   (remhash char (el-reader/rt/non-term-mac-fns readtable))
   (remhash char (el-reader/rt/term-mac-fns readtable))
-  (if non-terminating-p
-      (setf (gethash char (el-reader/rt/non-term-mac-fns readtable))
-            new-function)
-    (setf (gethash char (el-reader/rt/term-mac-fns readtable)) new-function))
-  t)
+  (when new-function
+    (if non-terminating-p
+        (setf (gethash char (el-reader/rt/non-term-mac-fns readtable))
+              new-function)
+      (setf (gethash char (el-reader/rt/term-mac-fns readtable))
+            new-function))
+    t))
 
 (defclass el-reader/result ()
   ((success :initarg :success :initform nil :type symbol)
@@ -366,42 +288,6 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
   (make-instance 'el-reader/result :token token :pos pos :newpos nil
                  :result-string nil :rest nil :result nil))
 
-;; (defun el-reader/rt/syntax-type (rt char)
-;;   "Returns a symbol which designates the syntax type of CHAR in RT. "
-;;   (cl-labels
-;;       ((put-syntax-type
-;;           (type)
-;;           (when (cl-member
-;;                  char
-;;                  (funcall (intern (s-concat "el-reader/rt/" (symbol-name type)
-;;                                             "-chars"))
-;;                           *readtable*))
-;;             (if (get-text-property 0 type s)
-;;                 (error "More than one syntax type")
-;;               (put-text-property 0 1 'syntax-type
-;;                                  (adjust-macro-names type) s)))))
-;;     (cond ((el-reader/rt/terminating-macro-char-p rt char)
-;;            'terminating-macro-char)
-;;           ((el-reader/rt/non-terminating-macro-char-p rt char)
-;;            'non-terminating-macro-char))))
-
-;; (defun el-reader/rt//not-non-constituent-p (rt char)
-;;   (let ((l (list #'el-reader/rt/terminating-macro-chars
-;;                  #'el-reader/rt/non-terminating-macro-chars
-;;                  #'el-reader/rt/whitespace-chars
-;;                  #'el-reader/rt/single-escape-chars
-;;                  #'el-reader/rt/multiple-escape-chars)))
-;;     (-all? #'null (mapcar (lambda (fn) (member char (funcall fn rt))) l))))
-
-
-;; (defun el-reader/rt/constituentp (rt char)
-;;   "Returns non-nil if CHAR is a constituent char.
-
-;; This is the case if it is either a member of the slot
-;; CONSTITUENT-CHARS."
-;;   (or (not (null (member char (el-reader/rt/constituent-chars rt))))
-;;       (funcall (el-reader/rt/constituent-fn rt) char)))
-
 (defun el-reader/rt/constituentp (rt char)
   "Returns non-nil if CHAR is a constituent char.
 
@@ -420,12 +306,6 @@ CONSTITUENT-CHARS, or not a member of the other classes"
                       #'el-reader/rt/single-escape-char-p
                       #'el-reader/rt/multiple-escape-char-p)))
         char))))
-
-;; (defun el-reader/rt/invalidp (rt char)
-;;   "Return non-nil if char is both constituent and invalid."
-;;   (or (not (null (member char (gethash 'invalid (el-reader/rt/traits rt)))))
-;;       (seq-some (-compose #'not #'null)
-;;                 (funcall (apply #'-juxt (el-reader/rt/trait-fns rt)) char))))
 
 (defun el-reader/rt/invalid-syntax-type-p (rt char)
   "Return non-nil if CHAR is of syntax type invalid."
@@ -449,16 +329,10 @@ syntax-type invalid."
 (defun el-reader/rt/whitespacep (rt char)
   (not (null (member char (el-reader/rt/whitespace-chars rt)))))
 
-;; (defun el-reader/rt/terminating-macro-char-p (rt char)
-;;   (not (null (member char (el-reader/rt/terminating-macro-chars rt)))))
-
 (defun el-reader/rt/terminating-macro-char-p (rt char)
   (not (null (member char (cl-loop for k being the hash-keys in
                                    (slot-value rt 'term-mac-fns)
                                    collect k)))))
-
-;; (defun el-reader/rt/non-terminating-macro-char-p (rt char)
-;;   (not (null (member char (el-reader/rt/non-terminating-macro-chars rt)))))
 
 (defun el-reader/rt/non-terminating-macro-char-p (rt char)
   (not (null (member char (cl-loop for k being the hash-keys in
@@ -472,15 +346,6 @@ syntax-type invalid."
   (not (null (member char (el-reader/rt/multiple-escape-chars rt)))))
 
 ;;; Define read macros here.
-
-;; (defun el-reader/read-string (stream char)
-;;   (let ((ch (el-reader/getch stream))
-;;         (str ""))
-;;     (while (/= ch ?\")
-;;       (if (= ch ?\\)
-;;           (let ((ch (el-reader/getch stream)))
-;;             (setf str (s-concat str (char-to-string ch))))
-;;           (setf str (s-concat str (char-to-string ch)))))))
 
 (defun el-reader/read-string (stream char)
   (el-reader/getch stream char)
@@ -578,13 +443,6 @@ it.  It shall stay that way!")
          whitespace
          single-escape
          multiple-escape))
-      ;; (--each '(terminating-macro
-      ;;           non-terminating-macro
-      ;;           constituent
-      ;;           whitespace
-      ;;           single-escape
-      ;;           multiple-escape)
-      ;;   (put-syntax-type it))
       (put-text-property
        0 1 'traits 
        (cl-loop for k being the hash-keys in (el-reader/rt/traits *readtable*)
@@ -597,12 +455,7 @@ it.  It shall stay that way!")
 (defun el-reader/defaults-to-str-props (char)
   (let ((s (char-to-string char)))
     (cl-labels
-        (;; (adjust-macro-names
-         ;;  (type)
-         ;;  (if (string-suffix-p "macro" (symbol-name type))
-         ;;      (intern (s-concat (symbol-name type) "-char"))
-         ;;    type))
-         (put-syntax-type
+        ((put-syntax-type
           (type)
           (when (funcall
                  (intern
@@ -611,7 +464,7 @@ it.  It shall stay that way!")
                    (symbol-name type)
                    (if (string-match-p "-" (symbol-name type))
                        "-p"
-                       "p")))
+                     "p")))
                  *readtable* char)
             (if (get-text-property 0 type s)
                 (error "More than one syntax type")
@@ -625,15 +478,8 @@ it.  It shall stay that way!")
          whitespace
          single-escape-char
          multiple-escape-char))
-      ;; (--each '(terminating-macro
-      ;;           non-terminating-macro
-      ;;           constituent
-      ;;           whitespace
-      ;;           single-escape
-      ;;           multiple-escape)
-      ;;   (put-syntax-type it))
       (put-text-property
-       0 1 'traits 
+       0 1 'traits
        (cl-loop for k being the hash-keys in (el-reader/rt/traits *readtable*)
                 if (cl-member char (gethash k (el-reader/rt/traits
                                                *readtable*)))
@@ -653,6 +499,11 @@ it.  It shall stay that way!")
 (defun el-reader/token-alphabetic-p (token pos)
   (let ((p (get-text-property pos 'traits token)))
     (and (listp p) (eq (car p) 'alphabetic))))
+
+;;; This is a recursive descent parser for number types.  This may be stripped
+;;; away in a future version.  The main reason to strip it, is that Emacs’
+;;; default reader may be used.  The main reason to keep it, is that this
+;;; version may be easier to extend.  For now it stays.
 
 ;;; Create classes for each parse result (digit, exponent, etc.)
 
@@ -885,37 +736,6 @@ it.  It shall stay that way!")
     (cadr sign-and-digits))
    (car sign-and-digits)))
 
-;; (defun el-reader/dec-places (int)
-;;   (1+ (floor (log10 int))))
-
-;; (defun el-reader/make-0-point (sign-and-dec-digits)
-;;   (* (el-reader/make-int (el-reader/drop-leading-zeros sign-and-dec-digits))
-;;      (expt 10 (- (1- (length dec-digits))))))
-
-;;; TODO: This is completely bokers!  The best might as well be to strip off the
-;;; sign before using this function.  Also, check where to strip off zeros, as
-;;; these can be significant, even leading ones (if after a decimal point).
-
-;; (defun el-reader/drop-zeros (digits leading?)
-;;   (let* ((first-elem-sign? (if (el-reader/digit-p (car digits)) nil
-;;                              (list (car digits))))
-;;          (res (-drop-while (lambda (d) (zerop (slot-value d 'value)))
-;;                            (let ((tmp (if first-elem-sign? (cdr digits)
-;;                                         digits)))
-;;                              (if leading? tmp (reverse tmp))))))
-;;     (if first-elem-sign?
-;;         (cons (car first-elem-sign?) res)
-;;       res)))
-
-;; (defun el-reader/drop-leading-zeros (digits)
-;;   (let* ((first-elem-sign? (if (el-reader/digit-p (car digits)) nil
-;;                              (list (car digits))))
-;;          (res (-drop-while (lambda (d) (zerop (slot-value d 'value)))
-;;                            (if first-elem-sign? (cdr digits) digits))))
-;;     (if first-elem-sign?
-;;         (cons (car first-elem-sign?) res)
-;;       res)))
-
 (defun el-reader/drop-trailing-zeros (digits)
   (reverse (el-reader/drop-leading-zeros (reverse digits))))
 
@@ -1025,47 +845,6 @@ Leading zeros are dropped, the rest is returned as is."
                         #'el-reader/parse-float)
    token pos))
 
-;; (defun el-reader/try-parse-number (token pos)
-;;   (el-reader/make-result t token pos (length token) token ""
-;;                       (if (and (s-contains? "." (substring token pos))
-;;                                (not (s-suffix? "." (substring token pos))))
-;;                           (string-to-number (substring token pos) 10)
-;;                         (cl-parse-integer
-;;                          token :start pos :end
-;;                          (if (s-suffix? "." (substring token pos))
-;;                              (1- (length token)) (length token))
-;;                          :radix *read-base*))))
-
-;; (defclass el-reader//string-wrapper ()
-;;   ((string :initarg :string :initform "")))
-
-;; (cl-defmethod seq-elt ((sequence el-reader//string-wrapper) n)
-;;   (substring (slot-value sequence 'string) n (1+ n)))
-
-;; (cl-defmethod seq-length ((sequence el-reader//string-wrapper))
-;;   (length (slot-value sequence 'string)))
-
-;; (cl-defmethod seq-do (function (sequence el-reader//string-wrapper))
-;;   (dotimes (i (length (slot-value sequence 'string)))
-;;     (funcall function (seq-elt sequence i))))
-
-;; (cl-defmethod seq-p ((sequence el-reader//string-wrapper))
-;;   (el-reader//string-wrapper-p sequence))
-
-;; (cl-defmethod seq-subseq ((sequence el-reader//string-wrapper)
-;;                           start &optional end)
-;;   (make-instance
-;;    'el-reader//string-wrapper
-;;    :string (substring (slot-value sequence 'string) start end)))
-
-;; (cl-defmethod seq-into-sequence ((sequence el-reader//string-wrapper))
-;;   sequence)
-
-;; (cl-defmethod seq-copy ((sequence el-reader//string-wrapper))
-;;   (make-instance
-;;    'el-reader//string-wrapper
-;;    (substring sequence)))
-
 (defun el-reader//map-string-as-substrings (fn token)
   "Works like `mapcar' on a string, yet passes the chars as singleton strings,
 leaving the properties intact.  The result is a list of the results, in order."
@@ -1089,8 +868,9 @@ leaving the properties intact.  The result is a list of the results, in order."
                (not *el-reader//allow-single-dot-symbol*))
           (signal 'reader-error "invalid-read-syntax: \".\"")
         (intern name)))))
-
-;TODO: possibly build in package support.  This would ;need a hook of some sort.
+;;; The parser is now defined and may be used.
+
+;TODO: possibly build in package support.  This would need a hook of some sort.
 (defun el-reader/process-token (token)
   (let ((num? (el-reader/parse-numeric-token token 0)))
     (if (slot-value num? 'success)
@@ -1190,17 +970,75 @@ leaving the properties intact.  The result is a list of the results, in order."
                                 k f term readtable)))
                  (unwind-protect
                      (el-reader/read stream t nil t)
+                   ;; On unwind, first clear all set macro chars,
+                   (cl-loop for k being the hash-keys in macro-funs using
+                            (hash-value f) do
+                            (-let [(f term) f]
+                              (el-reader/set-macro-character
+                               k nil term readtable)))
+                   ;; then restore the old ones.
                    (cl-loop for k being the hash-keys in backup using
                             (hash-value f) do
                             (-let [(f term) f]
                               (el-reader/set-macro-character
                                k f term readtable)))))))))))
 
-(defun el-reader/get-dispatch-macro-character (disp-char sub-char &optional
-                                                         readtable))
+(cl-defun el-reader/make-dispatching-function (&optional (readtable *readtable*))
+  (let ((macro-funs (make-hash-table)))
+    ;; Note that the arguments to set must be a key, a function, and optionally
+    ;; a boolean, to indicate whether key shall be non-terminating (non-nil) or
+    ;; terminating (nil).
+    (lambda (stream char &rest closure-args)
+      (-let [(action var val opt-val) closure-args]
+        (cond ((eq action :get)
+               (gethash var macro-funs))
+              ((eq action :set)
+               (setf (gethash var macro-funs) (list val opt-val)))
+              ((and (not (and action var val))
+                    (or action var val))
+               (error "Invalid args"))
+              (t
+               (let ((c (el-reader/getch stream)))
+                 (if-let ((f (gethash c macro-funs)))
+                     (funcall (car f) stream c)
+                   (error "Invalid read syntax: \"%c\"" char)))))))))
 
-(defun el-reader/set-dispatch-macro-character (disp-char sub-char new-function
-                                                         &optional readtable))
+;; (defun el-reader/get-dispatch-macro-character (disp-fun sub-char &optional
+;;                                                          readtable))
+
+(defun el-reader/set-dispatch-macro-function (disp-fun sub-char new-function
+                                                        &optional
+                                                        non-terminating-p)
+  (funcall disp-fun nil nil :set sub-char new-function non-terminating-p))
+
+;;; The main dispatching macro char: #
+(el-reader/set-macro-character ?# (el-reader/make-dispatching-function) t)
+
+;;; Function quote: #'func => (function func)
+(el-reader/set-dispatch-macro-function
+ (car (el-reader/get-macro-character ?#))
+ ?' (lambda (stream char)
+      `(function ,(el-reader/read stream))))
+
+;;; Read circular objects: #1=(a #1#)
+(defun el-reader/read-circle (stream char)
+  ;; Unread the first char, as it is part of the number
+  (el-reader/getch stream char)
+  ;; Set = as a terminating macro char.  It does not need any meaning, as it
+  ;; is only used, to end the number.  123= shall read as the number 123, not as
+  ;; the symbol 123=.
+
+  (let ((backup-for-= (el-reader/get-macro-character ?=))
+        (read-objects (make-hash-table)))
+    (el-reader/set-macro-character
+     ?=
+     (lambda (stream char)
+       (error "Invalid read syntax: \"%c\"" char))
+     t)
+    (let ((n (el-reader/read stream t nil t)))
+      (el-reader/set-macro-character ?= (car backup-for-=) (cadr backup-for-=))
+      (let ((obj (el-reader/read stream t nil t)))
+        (setf (gethash n read-objects) obj)))))
 
 ;;;###autoload
 (cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
@@ -1292,14 +1130,6 @@ leaving the properties intact.  The result is a list of the results, in order."
              (let ((*el-reader//allow-single-dot-symbol* nil))
                (funcall (gethash x (el-reader/rt/non-term-mac-fns *readtable*))
                         input-stream x)))
-            ;; ((or (el-reader/rt/terminating-macro-char-p *readtable* x)
-            ;;      (el-reader/rt/non-terminating-macro-char-p *readtable* x))
-
-            ;;  (--if-let (funcall (gethash x (el-reader/rt/terminating-macro-chars
-            ;;                                 *readtable*))
-            ;;                     input-stream x)
-            ;;      (car it)
-            ;;    (el-reader/read input-stream eof-error-p eof-value recursive-p)))
             ((el-reader/rt/single-escape-char-p *readtable* x)
              ;; (signal 'reader-error "Single escape is not yet supported")
              (step-8
@@ -1316,7 +1146,9 @@ leaving the properties intact.  The result is a list of the results, in order."
              )
             ((el-reader/rt/constituentp *readtable* x)
              (step-8 input-stream (el-reader/defaults-to-str-props x)))
-            (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!"))))))
+            (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!")
+               ;; So far it has not happened.
+               )))))
 
 (provide 'el-reader)
 
