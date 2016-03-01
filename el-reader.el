@@ -1174,6 +1174,16 @@ Not part of any public interface.  Assume nothing about it.")
      ;;   (error "Invalid read syntax: \"%c\"" ?#))
      )))
 
+(el-reader/set-dispatch-macro-character
+ ?#
+ ?r
+ (lambda (stream char radix)
+   (let ((*read-base* radix))
+     (let ((r (el-reader/read stream)))
+       (if (integerp r)
+           r
+         (error "invalid-read-syntax \"integer, radix %i\"" radix))))))
+
 ;; When the toplevel read has been reached, remove all advice placed by #n= and
 ;; #n# code.  This will be placed so that it is run /after/ said other advice.
 ;; (el-reader/removable-advice
@@ -1272,11 +1282,11 @@ with said cons, and then replacing all dummy conses with the proper reference. "
 ;;    (car (el-reader/get-macro-character ?#))
 ;;    (+ ?0 i) #'el-reader/read-assoc))
 
-(cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
-                                    recursive-p)
-  (el-reader/generic-read input-stream eof-error-p eof-value recursive-p))
+;; (cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
+;;                                     recursive-p)
+;;   (el-reader/generic-read input-stream eof-error-p eof-value recursive-p))
 
-(cl-defgeneric el-reader/generic-read (&optional input-stream eof-error-p eof-value
+(cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
                                     recursive-p)
   (let* ((input-stream (el-reader/get-getch-state input-stream))
          (x (condition-case c
