@@ -87,7 +87,7 @@ Keys and values are given alternating in args."
 
 Unfortunately it does a maximal unroll."
   (cl-labels ((proc-entry (k v h) `(puthash ,k ,v ,h)))
-    (if (oddp (length args))
+    (if (cl-oddp (length args))
         (error "Odd number of args passed")
       (let ((h (cl-gensym)))
         `(let ((,h (make-hash-table)))
@@ -144,7 +144,8 @@ value slot, so it must be called via funcall or apply."
               (error "Unreading to before the buffer begins"))
           (error "Unreading back a different char than was read"))
       (if (eobp)
-          (end-of-buffer (signal 'end-of-file "End of buffer reached"))
+          ;; (end-of-buffer (signal 'end-of-file "End of buffer reached"))
+          (signal 'end-of-file "End of buffer reached")
         (prog1 (char-after)
           (forward-char))))))
 
@@ -159,7 +160,8 @@ value slot, so it must be called via funcall or apply."
                (error "Unreading to before the buffer begins"))
            (error "Unreading back a different char than was read"))
        (if (eobp)
-           (end-of-buffer (signal 'end-of-file "End of buffer reached"))
+           ;; (end-of-buffer (signal 'end-of-file "End of buffer reached"))
+           (signal 'end-of-file "End of buffer reached")
          (prog1 (char-after)
              (incf (marker-position m))))))))
 
@@ -191,10 +193,10 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
 (cl-defmethod el-reader/get-getch-state ((s string))
   (make-instance 'el-reader/string-reader-state :string s))
 
-(cl-defmethod el-reader/get-getch-state ((stdin (eql t)))
+(cl-defmethod el-reader/get-getch-state ((_stdin (eql t)))
   (el-reader/get-getch-state (read-from-minibuffer "Lisp expression: ")))
 
-(cl-defmethod el-reader/get-getch-state ((stdin (eql nil)))
+(cl-defmethod el-reader/get-getch-state ((_stdin (eql nil)))
   (el-reader/get-getch-state standard-input))
 
 (defclass el-reader/macro-fn ()
@@ -248,9 +250,9 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
                                                 (symbol-name prefix)
                                               "")
                                             (symbol-name e))))
-                  (new-elt (rt el-reader/readtable))
+                  (new-elt (obj el-reader/readtable))
                 (setf (slot-value obj ',e) new-elt))))
-         (object-slots (make-instance class)))))
+         (seq-map #'eieio-slot-descriptor-name (eieio-class-slots class)))))
 
 (el-reader/make-public-accessors el-reader/readtable el-reader/rt/)
 
@@ -361,7 +363,7 @@ syntax-type invalid."
   (el-reader/getch stream char)
   (read (-partial #'el-reader/getch stream)))
 
-(defun el-reader/read-char (stream char)
+(defun el-reader/read-char (stream _char)
   (let* ((ch1 (el-reader/getch stream))
          (str (s-concat "?" (char-to-string ch1))))
     (when (= ch1 ?\\)
@@ -746,8 +748,8 @@ it.  It shall stay that way!")
     (cadr sign-and-digits))
    (car sign-and-digits)))
 
-(defun el-reader/drop-trailing-zeros (digits)
-  (reverse (el-reader/drop-leading-zeros (reverse digits))))
+;; (defun el-reader/drop-trailing-zeros (digits)
+;;   (reverse (el-reader/drop-leading-zeros (reverse digits))))
 
 (defun el-reader/drop-leading-zeros (digits)
   "DIGITS is a seq of digit objects (`el-reader/digit').
@@ -779,7 +781,9 @@ Leading zeros are dropped, the rest is returned as is."
                      #'el-reader/parse-decimal-digit)))
                   #'el-reader/parse-exponent)))
                token pos))
-         (res (slot-value flt 'result)))
+         ;; unused?
+         ;; (res (slot-value flt 'result))
+         )
     ;;; NB: “Left” refers to the grammar given here:
     ;;; http://www.lispworks.com/documentation/lw70/CLHS/Body/02_ca.htm Left
     ;;; mereley means that it is the first case, rather than the latter.  This
@@ -802,12 +806,14 @@ Leading zeros are dropped, the rest is returned as is."
                  (int (or (get-int-part digits) 0.0)))
             (* int (expt 10 (- digit-count)))))
          (fe (float)
-             (let* ((left (not (or (null (third float)) (and (listp (third float))
-                                      (= (length (third float)) 2)))))
+             (let* ((left (not (or (null (third float))
+                                   (and (listp (third float))
+                                        (= (length (third float)) 2)))))
                     (dec-digits (cadr float))
-                    (dec-point? (if left
-                                    (third float)
-                                  (car (third float))))
+                    ;; according to the byte-compiler, dec-point? is never used.
+                    ;; (dec-point? (if left
+                    ;;                 (third float)
+                    ;;               (car (third float))))
                     (mantissa (if left (fourth float)
                                 (second (third float))))
                     (exponent (if left (fifth float) (fourth float))))
@@ -913,7 +919,7 @@ leaving the properties intact.  The result is a list of the results, in order."
     (el-reader/getch stream)
     (reverse res-list)))
 
-(defun el-reader/read-lisp-list (stream char)
+(defun el-reader/read-lisp-list (stream _char)
   (let ((*el-reader//allow-single-dot-symbol* t))
     (let ((l (el-reader/read-delimited-list ?\) stream t)))
       (let ((l- (if (and (>= (seq-length l) 3)
@@ -923,26 +929,26 @@ leaving the properties intact.  The result is a list of the results, in order."
                   l)))
         (if (not (cl-loop for s in l- if (eq s (intern ".")) collect s))
             (prog1 l-
-            (unintern "."))
-          (unintern ".")
+            (unintern "." obarray))
+          (unintern "." obarray)
           (signal 'reader-error "invalid-read-syntax: \".\""))))))
 
 (el-reader/set-macro-character ?\( #'el-reader/read-lisp-list)
 (el-reader/set-macro-character ?\" #'el-reader/read-string)
 (el-reader/set-macro-character ?? #'el-reader/read-char)
 
-(el-reader/set-macro-character ?\) (lambda (&rest args)
+(el-reader/set-macro-character ?\) (lambda (&rest _args)
                                      (signal 'unbalanced-sexp nil)))
 
 (el-reader/set-macro-character ?\] (el-reader/get-macro-character ?\)))
 (el-reader/set-macro-character
- ?\[ (lambda (stream char)
+ ?\[ (lambda (stream _char)
        (apply #'vector (el-reader/read-delimited-list ?\] stream t))))
 
 (el-reader/set-macro-character
- ?\' (lambda (stream char) `(quote ,(el-reader/read stream t nil t))))
+ ?\' (lambda (stream _char) `(quote ,(el-reader/read stream t nil t))))
 (el-reader/set-macro-character
- ?, (lambda (stream char)
+ ?, (lambda (stream _char)
       (let ((next (el-reader/peek-char stream)))
         (if (/= ?@ next)
             `(,(intern ",") ,(el-reader/read stream t nil t))
@@ -950,9 +956,9 @@ leaving the properties intact.  The result is a list of the results, in order."
           `(,(intern ",@") ,(el-reader/read stream t nil t))))))
 
 (el-reader/set-macro-character
- ?` (lambda (stream char) `(,(intern "`") ,(el-reader/read stream t nil t))))
+ ?` (lambda (stream _char) `(,(intern "`") ,(el-reader/read stream t nil t))))
 
-(defun el-reader/read-comment (stream char)
+(defun el-reader/read-comment (stream _char)
   (cl-do ((c (el-reader/peek-char stream)
              (progn
                (el-reader/getch stream)
@@ -1000,7 +1006,8 @@ leaving the properties intact.  The result is a list of the results, in order."
 ;;                               (el-reader/set-macro-character
 ;;                                k f term readtable)))))))))))
 
-(cl-defun el-reader/make-dispatching-function (&optional (readtable *readtable*))
+(cl-defun el-reader/make-dispatching-function (;; &optional (readtable *readtable*)
+                                               )
   (let ((macro-funs (make-hash-table)))
     ;; Note that the arguments to set must be a key, a function, and optionally
     ;; a boolean, to indicate whether key shall be non-terminating (non-nil) or
@@ -1101,7 +1108,7 @@ leaving the properties intact.  The result is a list of the results, in order."
 
 (el-reader/set-dispatch-macro-character
  ?# ?'
- (lambda (stream char _number)
+ (lambda (stream _char _number)
    `(function ,(el-reader/read stream t nil t))))
 
 (defun el-reader/replace-placeholder (tree placeholder new-val)
@@ -1137,7 +1144,7 @@ Not part of any public interface.  Assume nothing about it.")
 
 (el-reader/set-dispatch-macro-character
  ?# ?=
- (lambda (stream char number)
+ (lambda (stream _char number)
 ;;; save a placeholder (these are all unique)
    (let ((placeholder (cons nil nil))) 
      ;; (setf (gethash number *el-reader/read-objects*)
@@ -1159,7 +1166,7 @@ Not part of any public interface.  Assume nothing about it.")
 (el-reader/set-dispatch-macro-character
  ?#
  ?#
- (lambda (stream char number)
+ (lambda (_stream _char number)
    (if (not number)                     ; empty symbol
        (make-symbol "")
      (let ((placeholder (assq number *el-reader/read-objects*)))
@@ -1175,9 +1182,8 @@ Not part of any public interface.  Assume nothing about it.")
      )))
 
 (el-reader/set-dispatch-macro-character
- ?#
- ?r
- (lambda (stream char radix)
+ ?# ?r
+ (lambda (stream _char radix)
    (let ((*read-base* radix))
      (let ((r (el-reader/read stream)))
        (if (integerp r)
@@ -1313,7 +1319,7 @@ with said cons, and then replacing all dummy conses with the proper reference. "
                               (downcase c)
                             (upcase c)))
          (step-8 (input-stream token)
-                 (let ((y (condition-case c
+                 (let ((y (condition-case nil
                               (el-reader/getch input-stream)
                             (end-of-file (cl-return-from el-reader/read
                                            (el-reader/process-token token))))))
@@ -1350,7 +1356,10 @@ with said cons, and then replacing all dummy conses with the proper reference. "
                                  #'el-reader/rt/constituentp
                                  #'el-reader/rt/terminating-macro-char-p
                                  #'el-reader/rt/non-terminating-macro-char-p
-                                 #'el-reader/rt/whitespace-char-p)))
+                                 ;; For some reason this was called
+                                 ;; el-reader/rt/whitespace-char-p.  It did not
+                                 ;; crash.
+                                 #'el-reader/rt/whitespacep))) 
                               y)
                      (step-9
                       input-stream (put-escaped-prop (force-alphabetic y))))
@@ -1399,7 +1408,7 @@ with said cons, and then replacing all dummy conses with the proper reference. "
                )))))
 
 (define-advice el-reader/read
-    (:after (&optional input-stream eof-error-p eof-value recursive-p)
+    (:after (&optional _input-stream _eof-error-p _eof-value recursive-p)
             nil
             -100)
   (when (not recursive-p)
