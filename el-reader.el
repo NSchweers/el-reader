@@ -1454,9 +1454,9 @@ leaving the properties intact.  The result is a list of the results, in order."
 (define-advice read (:around (oldfun &optional stream) el-reader/replace-read)
   (if use-el-reader
       (progn
-        (message "Using el-reader.")
+        ;; (message "Using el-reader.")
         (el-reader/read stream))
-    (message "Using built-in reader.")
+    ;; (message "Using built-in reader.")
     (funcall oldfun stream)))
 
 (provide 'el-reader)

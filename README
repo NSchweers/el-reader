@@ -1,0 +1,8 @@
+This is a flexible reader for Emacs Lisp.
+
+It allows Common Lisp like read macros, on a per readtable and per buffer
+basis.  If the buffer-local variable `use-el-reader' is nil, the built-in reader
+is used.  Otherwise this package is used.
+
+To use this reader, put this line anywhere it the file, before using any
+el-reader features: (eval-and-compile (setf use-el-reader t))
