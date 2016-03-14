@@ -1,4 +1,4 @@
-;;;; el-reader.el --- An Advanced reader for Emacs Lisp -*- lexical-binding: t -*-
+;;; el-reader.el --- An Advanced reader for Emacs Lisp -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2015 Nathanael Schweers
 
