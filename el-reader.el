@@ -159,12 +159,13 @@ Unfortunately it does a maximal unroll."
      'el-reader/readtable
      :whitespace-chars
      '(?\s ?\t ?\n ?\e ?\f)
-     ;; We don’t support escaping of token characters yet!  This is not really
-     ;; needed for any lisp, other than common lisp.
-     ;; We might support the mechanism some day by adding a property to each char,
-     ;; which tells us, whether or not it was escaped.
-     ;;   :single-escape-chars '(?\\)
-     ;;   :multiple-escape-chars '(?|)
+     ;; Escaping is supported, yet no case conversion is performed.  The main
+     ;; reason to perform escaping is to allow spaces and the like in symbols.
+     ;; While it is supported, by default we do not register any multiple escape
+     ;; chars, just in case someone used the | char in a symbol without
+     ;; intending it to be escaped.
+     ;; :single-escape-chars '(?\\)
+     ;; :multiple-escape-chars '(?|)
      ;; :terminating-macro-chars '(?\" ?' ?\( ?\) ?, ?\; ?` ??)
      ;; :non-terminating-macro-chars '(?#)
      :constituent-chars '(?\b ?! ?$ ?% ?& ?* ?+ ?- ?. ?/ 48 49 50
@@ -1382,7 +1383,8 @@ leaving the properties intact.  The result is a list of the results, in order."
          (step-9 (input-stream token)
                  (let ((y (el-reader/getch input-stream)))
                    (cond
-                    ((funcall (-orfn
+                    ((funcall (apply
+                               #'-orfn
                                (seq-map
                                 (lambda (fn)
                                   (-partial fn *readtable*))
@@ -1392,18 +1394,18 @@ leaving the properties intact.  The result is a list of the results, in order."
                                  #'el-reader/rt/non-terminating-macro-char-p
                                  ;; For some reason this was called
                                  ;; el-reader/rt/whitespace-char-p.  It did not
-                                 ;; crash.
-                                 #'el-reader/rt/whitespacep))) 
+                                 ;; crash.  Weird.
+                                 #'el-reader/rt/whitespacep)))
                               y)
                      (step-9
-                      input-stream (put-escaped-prop (force-alphabetic y))))
+                      input-stream (s-concat token (put-escaped-prop (force-alphabetic y)))))
                     ((el-reader/rt/single-escape-char-p *readtable* y)
                      (step-9
                       input-stream (put-escaped-prop
                                     (force-alphabetic
                                      (el-reader/getch input-stream)))))
                     ((el-reader/rt/multiple-escape-char-p *readtable* y)
-                     (step-8 token))
+                     (step-8 input-stream token))
                     ((el-reader/rt/invalidp *readtable* y)
                      (signal 'reader-error "Invalid char"))))))
       (when (not recursive-p)
