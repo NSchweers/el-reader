@@ -1145,7 +1145,7 @@ leaving the properties intact.  The result is a list of the results, in order."
         new-function)
   t)
 
-(el-reader/make-dispatch-macro-character ?# t)
+(el-reader/make-dispatch-macro-character ?# nil)
 
 (el-reader/set-dispatch-macro-character
  ?# ?'
