@@ -67,7 +67,10 @@
 
 (eval-and-compile (make-variable-buffer-local 'use-el-reader))
 
-;; (eval-and-compile (setq-local use-el-reader nil))
+;; NOTE: put the following line at the start of any buffer which shall use
+;; el-reader (without the comment chars, of course).
+
+;; (eval-and-compile (setf use-el-reader t))
 
 (require 'cl-lib)
 (require 'eieio)
@@ -169,7 +172,7 @@ Keys and values are given alternating in args."
      ;; While it is supported, by default we do not register any multiple escape
      ;; chars, just in case someone used the | char in a symbol without
      ;; intending it to be escaped.
-     ;; :single-escape-chars '(?\\)
+     :single-escape-chars '(?\\)
      ;; :multiple-escape-chars '(?|)
      ;; :terminating-macro-chars '(?\" ?' ?\( ?\) ?, ?\; ?` ??)
      ;; :non-terminating-macro-chars '(?#)
@@ -345,9 +348,21 @@ If at end of stream, throws end-of-file")
 
 The default method checks if OBJ is a function, as cl-defgeneric
 cannot dispatch on functions.  Otherwise, OBJ is returned as is."
+  (message "el-reader//get-getch-state called with %S" obj)
   (if (functionp obj)
       (make-instance 'el-reader//function-read-state :function obj)
     obj))
+
+(cl-defmethod el-reader//get-getch-state ((gfc (eql 'get-file-char)))
+  (make-instance
+   'el-reader//function-read-state
+   :function
+   (let ((unread-chars))
+     (lambda (&optional c)
+       (if c (progn (push c unread-chars) nil)
+         (if unread-chars
+             (pop unread-chars)
+           (funcall gfc)))))))
 
 (cl-defmethod el-reader//get-getch-state ((s string))
   (make-instance 'el-reader//string-reader-state :string s))
@@ -941,13 +956,14 @@ leaving the properties intact.  The result is a list of the results, in order."
     (seq-reverse res)))
 
 (define-error 'reader-error "The reader encountered an error")
+
 (defun el-reader//parse-symbol (token pos)
   (when (not (zerop pos))
     (warn "POS is nonzero, this probably shouldn’t happen!"))
   (cl-labels ((escaped-p
                (str pos)
                (get-text-property pos 'escapedp str)))
-    (let ( (name (substring-no-properties token pos)))
+    (let ((name (substring-no-properties token pos)))
       (if (and (string= name ".")
                (not (get-text-property pos 'escapedp token))
                (not *el-reader//allow-single-dot-symbol*))
@@ -963,11 +979,67 @@ leaving the properties intact.  The result is a list of the results, in order."
 ;; package support.  Possibly the emacs-devel team can be convinced to change
 ;; this.
 
+(defun el-reader//contains-non-number-syntax-type? (token)
+  (not
+   (-all?
+    #'identity
+    (el-reader//map-string-as-substrings
+     (lambda (c)
+       (and
+        (not (get-text-property 0 'escapedp c))
+        (-any? #'identity
+               (cons
+                (-when-let
+                    (d? (gethash
+                         (string-to-char c)
+                         (el-reader//rt/char-to-num *el-reader/readtable*)))
+                  (< d? *el-reader/read-base*))
+                (seq-map (-partial #'seq-contains
+                                   (get-text-property 0 'traits c))
+                         '(plus-sign
+                           minus-sign
+                           ratio-marker
+                           decimal-point
+                           dot
+                           float-exponent-marker
+                           double-float-exponent-marker
+                           single-float-exponent-marker
+                           long-float-exponent-marker
+                           short-float-exponent-marker))))))
+     token))))
+
+;; (defun el-reader//process-token (token)
+;;   (let ((num? (el-reader//parse-numeric-token token 0)))
+;;     (if (slot-value num? 'success)
+;;         (slot-value (slot-value num? 'result) 'value)
+;;       (el-reader//parse-symbol token 0))))
+
+;; (defun el-reader//process-token (token)
+;;   (advice-remove 'read #'read@el-reader//replace-read)
+;;   (unwind-protect
+;;       (let ((r (read (substring-no-properties token))))
+;;         (if (numberp r)
+;;             r
+;;           (el-reader//parse-symbol token 0)))
+;;     (advice-add 'read :around #'read@el-reader//replace-read)))
+
+;; (defun el-reader//process-token (token)
+;;   (advice-remove 'read #'read@el-reader//replace-read)
+;;   (unwind-protect
+;;       (read (substring-no-properties token))
+;;     (advice-add 'read :around #'read@el-reader//replace-read)))
+
 (defun el-reader//process-token (token)
-  (let ((num? (el-reader//parse-numeric-token token 0)))
-    (if (slot-value num? 'success)
-        (slot-value (slot-value num? 'result) 'value)
-      (el-reader//parse-symbol token 0))))
+  ;; (el-reader//contains-non-number-syntax-type? token)
+  (if (text-property-any 0 (length token) 'escapedp t token)
+      ;; (-any? #'identity
+      ;;        (el-reader//map-string-as-substrings
+      ;;         (lambda (c) (get-text-property 0 'escapedp c)) token))
+      (el-reader//parse-symbol token 0)
+      (advice-remove 'read #'read@el-reader//replace-read)
+    (unwind-protect
+        (read (substring-no-properties token))
+      (advice-add 'read :around #'read@el-reader//replace-read))))
 
 (defun el-reader/read-delimited-list (char &optional stream _recursive-p)
   (let ((end-res *el-reader/repeat-read*))
@@ -1462,8 +1534,9 @@ Recurses on cons and array, destructively modifying TREE."
             ((el-reader//rt/single-escape-char-p
               *el-reader/readtable* y)
              (setf token (s-concat token
-                                   (el-reader//force-alphabetic
-                                    (el-reader/getch input-stream)))))
+                                   (el-reader//put-escaped-prop
+                                    (el-reader//force-alphabetic
+                                     (el-reader/getch input-stream))))))
             ((el-reader//rt/multiple-escape-char-p
               *el-reader/readtable* y)
              (cl-return-from el-reader//step-8
@@ -1613,11 +1686,10 @@ Recurses on cons and array, destructively modifying TREE."
   (funcall (apply #'-compose *el-reader//circular-read-functions*) r))
 
 (define-advice read (:around (oldfun &optional stream) el-reader//replace-read)
+  (message "read-advice: use-el-reader: %s; stream: %S" use-el-reader stream)
   (if use-el-reader
       (progn
-        ;; (message "Using el-reader.")
         (el-reader/read stream))
-    ;; (message "Using built-in reader.")
     (funcall oldfun stream)))
 
 (provide 'el-reader)
