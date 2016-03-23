@@ -90,17 +90,17 @@ Keys and values are given alternating in args."
       h))
 
   ;; (cl-define-compiler-macro el-reader//ht (&rest args)
-;;     "This compiler macro performs loop unrolling.
+  ;;     "This compiler macro performs loop unrolling.
 
-;; Unfortunately it does a maximal unroll."
-;;     (cl-labels ((proc-entry (k v h) `(puthash ,k ,v ,h)))
-;;       (if (cl-oddp (length args))
-;;           (error "Odd number of args passed")
-;;         (let ((h (cl-gensym)))
-;;           `(let ((,h (make-hash-table)))
-;;              ,@(cl-loop for (key value) on args by #'cddr
-;;                         collect (proc-entry key value h))
-;;              ,h)))))
+  ;; Unfortunately it does a maximal unroll."
+  ;;     (cl-labels ((proc-entry (k v h) `(puthash ,k ,v ,h)))
+  ;;       (if (cl-oddp (length args))
+  ;;           (error "Odd number of args passed")
+  ;;         (let ((h (cl-gensym)))
+  ;;           `(let ((,h (make-hash-table)))
+  ;;              ,@(cl-loop for (key value) on args by #'cddr
+  ;;                         collect (proc-entry key value h))
+  ;;              ,h)))))
 
 ;;; In COMMON LISP traits are hardwired to the parser, we should not copy this
 ;;; mistake.  Also, define a mapping from digits to values.  I.e. make it
@@ -126,14 +126,14 @@ Keys and values are given alternating in args."
      (readtable-case :initarg :readtable-case :initform :preserve)
      (char-to-num :initarg :char-to-num :initform
                   (el-reader//ht 48 0 49 1 50 2 51 3 52 4 53 5 54 6 55 7 56 8
-                      57 9 97 10 98 11 99 12 100 13 101 14 102 15
-                      103 16 104 17 105 18 106 19 107 20 108 21 109
-                      22 110 23 111 24 112 25 113 26 114 27 115 28
-                      116 29 117 30 118 31 119 32 120 33 121 34 122
-                      35 65 10 66 11 67 12 68 13 69 14 70 15 71 16
-                      72 17 73 18 74 19 75 20 76 21 77 22 78 23 79
-                      24 80 25 81 26 82 27 83 28 84 29 85 30 86 31
-                      87 32 88 33 89 34 90 35))
+                                 57 9 97 10 98 11 99 12 100 13 101 14 102 15
+                                 103 16 104 17 105 18 106 19 107 20 108 21 109
+                                 22 110 23 111 24 112 25 113 26 114 27 115 28
+                                 116 29 117 30 118 31 119 32 120 33 121 34 122
+                                 35 65 10 66 11 67 12 68 13 69 14 70 15 71 16
+                                 72 17 73 18 74 19 75 20 76 21 77 22 78 23 79
+                                 24 80 25 81 26 82 27 83 28 84 29 85 30 86 31
+                                 87 32 88 33 89 34 90 35))
      (classic-dispatch-functions :initarg :classic-dispatch-functions
                                  :initform (el-reader//ht))))
 
@@ -183,29 +183,29 @@ Keys and values are given alternating in args."
                               119 120 121 122 ?{ ?} ?~)
      :traits (el-reader//ht 'invalid '(?\b ?\t ?\n ?\f ?\r ?\s)
                  
-                 'alphabetic '(?! ?\" ?# ?$ ?% ?& ? ?\( ?\) ?* ?,
-                                  ?\; ?< ?= ?> ?@ ?[ ?\\ ?] ?^ ?_
-                                  ?` ?| ?~ ?{ ?} ?+ ?- ?. ?/)
+                            'alphabetic '(?! ?\" ?# ?$ ?% ?& ? ?\( ?\) ?* ?,
+                                             ?\; ?< ?= ?> ?@ ?[ ?\\ ?] ?^ ?_
+                                             ?` ?| ?~ ?{ ?} ?+ ?- ?. ?/)
                  
-                 'alphadigit '(48 49 50 51 52 53 54 55 56 57 65
-                                  66 67 68 69 70 71 72 73 74 75
-                                  76 77 78 79 80 81 82 83 84 85
-                                  86 87 88 89 90 97 98 99 100 101
-                                  102 103 104 105 106 107 108 109
-                                  110 111 112 113 114 115 116 117
-                                  118 119 120 121 122)
+                            'alphadigit '(48 49 50 51 52 53 54 55 56 57 65
+                                             66 67 68 69 70 71 72 73 74 75
+                                             76 77 78 79 80 81 82 83 84 85
+                                             86 87 88 89 90 97 98 99 100 101
+                                             102 103 104 105 106 107 108 109
+                                             110 111 112 113 114 115 116 117
+                                             118 119 120 121 122)
                  
-                 'package-marker '(?:)
-                 'plus-sign '(?+)
-                 'minus-sign '(?-)
-                 'dot '(?.)
-                 'decimal-point '(?.)
-                 'ratio-marker '(?/)
-                 'double-float-exponent-marker '(?d ?D)
-                 'float-exponent-marker '(?e ?E)
-                 'single-float-exponent-marker '(?f ?F)
-                 'long-float-exponent-marker '(?l ?L)
-                 'short-float-exponent-marker '(?s ?S))))
+                            'package-marker '(?:)
+                            'plus-sign '(?+)
+                            'minus-sign '(?-)
+                            'dot '(?.)
+                            'decimal-point '(?.)
+                            'ratio-marker '(?/)
+                            'double-float-exponent-marker '(?d ?D)
+                            'float-exponent-marker '(?e ?E)
+                            'single-float-exponent-marker '(?f ?F)
+                            'long-float-exponent-marker '(?l ?L)
+                            'short-float-exponent-marker '(?s ?S))))
 
   (defvar *el-reader/readtable*
     (el-reader/make-default-elisp-readtable))
@@ -239,7 +239,14 @@ with the proper reference. ")
   (defvar *el-reader//circular-read-functions* nil
     "This is used internally by the reader macros for #n= and #n#.
 
-Not part of any public interface.  Assume nothing about it."))
+Not part of any public interface.  Assume nothing about it.")
+
+  (defvar *el-reader/repeat-read* (cons nil nil)
+    "This is a marker object, which may be returned by a read macro function.
+
+This is done in order to signal that the read process shall be repeated, thus
+forming a trampoline.  If Emacs had proper tail-call elimination, this would not
+have been necessary."))
 
 (defun el-reader//memhash (key table)
   (and (hash-table-p table)
@@ -462,7 +469,7 @@ syntax-type invalid."
 (defun el-reader/read-string (stream char)
   (el-reader/getch stream char)
   (advice-remove 'read #'read@el-reader//replace-read)
-  (prog1 (read (-partial #'el-reader/getch stream))
+  (prog1 (cl-values (read (-partial #'el-reader/getch stream)))
     (advice-add 'read :around #'read@el-reader//replace-read)))
 
 ;; (defun el-reader/read-string (stream char)
@@ -478,7 +485,7 @@ syntax-type invalid."
       (setf str (s-concat str (char-to-string (el-reader/getch stream)))))
     (prog2
         (advice-remove 'read #'read@el-reader//replace-read)
-        (read str)
+        (cl-values (read str))
       (advice-add 'read :around #'read@el-reader//replace-read))))
 
 ;; (defun el-reader//defaults-to-str-props (char)
@@ -963,37 +970,55 @@ leaving the properties intact.  The result is a list of the results, in order."
       (el-reader//parse-symbol token 0))))
 
 (defun el-reader/read-delimited-list (char &optional stream _recursive-p)
-  (let ((res-list nil)
-        (c (el-reader/peek-char stream)))
-    (while (/= c char)
-      (cond ((el-reader//rt/invalid-syntax-type-p *el-reader/readtable* c)
+  (let ((end-res *el-reader/repeat-read*))
+    (while (eq end-res *el-reader/repeat-read*)
+      (setf
+       end-res
+       (let ((res-list nil)
+             (c (el-reader/peek-char stream)))
+         (while (/= c char)
+           (cond
+            ((el-reader//rt/invalid-syntax-type-p *el-reader/readtable* c)
              (signal 'reader-error (list "Invalid char" c)))
             ((el-reader//rt/whitespacep *el-reader/readtable* c)
              (el-reader/getch stream)
              (setf c (el-reader/peek-char stream)))
             ((or (el-reader//rt/constituentp *el-reader/readtable* c)
-                 (el-reader//rt/terminating-macro-char-p *el-reader/readtable* c)
-                 (el-reader//rt/non-terminating-macro-char-p *el-reader/readtable* c)
+                 (el-reader//rt/terminating-macro-char-p
+                  *el-reader/readtable* c)
+                 (el-reader//rt/non-terminating-macro-char-p
+                  *el-reader/readtable* c)
                  (el-reader//rt/single-escape-char-p *el-reader/readtable* c)
                  (el-reader//rt/multiple-escape-char-p *el-reader/readtable* c))
-             (push (el-reader/read stream t nil t) res-list)
+             (let ((res (el-reader/read stream t nil t '(:return-list t))))
+               (if res
+                   (if (listp res)
+                       (push (car res) res-list)
+                     (error (s-join " " '("Read-macro functions must always "
+                                          "return a (possibly empty) list."))))
+                 *el-reader/repeat-read*)
+               ;; (push (el-reader/read stream t nil t) res-list)
+               )
              (setf c (el-reader/peek-char stream)))))
-    (el-reader/getch stream)
-    (reverse res-list)))
+         (el-reader/getch stream)
+         (reverse res-list))))
+    end-res))
 
 (defun el-reader//read-lisp-list (stream _char)
-  (let ((*el-reader//allow-single-dot-symbol* t))
-    (let ((l (el-reader/read-delimited-list ?\) stream t)))
-      (let ((l- (if (and (>= (seq-length l) 3)
-                         (eq (seq-elt l (- (length l) 2)) (intern ".")))
-                    (append (seq-subseq l 0 (- (seq-length l) 2))
-                            (seq-elt l (1- (seq-length l))))
-                  l)))
-        (if (not (cl-loop for s in l- if (eq s (intern ".")) collect s))
-            (prog1 l-
-            (unintern "." obarray))
-          (unintern "." obarray)
-          (signal 'reader-error "invalid-read-syntax: \".\""))))))
+  (cl-values
+   (let ((*el-reader//allow-single-dot-symbol* t))
+     (let ((l (el-reader/read-delimited-list ?\) stream t)))
+       (let ((l- (if (and (>= (seq-length l) 3)
+                          (eq (seq-elt l (- (length l) 2)) (intern ".")))
+                     (append (seq-subseq l 0 (- (seq-length l) 2))
+                             (seq-elt l (1- (seq-length l))))
+                   l)))
+         (if (not (cl-loop for s in l- if (eq s (intern ".")) collect s))
+             (prog1 l-
+               (unintern "." obarray))
+           (unintern "." obarray)
+           (signal 'reader-error "invalid-read-syntax: \".\"")))))))
+
 (el-reader/set-macro-character ?\( #'el-reader//read-lisp-list)
 (el-reader/set-macro-character ?\" #'el-reader/read-string)
 
@@ -1001,24 +1026,41 @@ leaving the properties intact.  The result is a list of the results, in order."
 
 (el-reader/set-macro-character ?\) (lambda (&rest _args)
                                      (signal 'unbalanced-sexp nil)))
-(el-reader/set-macro-character ?\] (el-reader/get-macro-character ?\)))
+(cl-multiple-value-bind (fun _term)
+    (el-reader/get-macro-character ?\))
+  (el-reader/set-macro-character ?\] fun))
 
 (el-reader/set-macro-character
- ?\[ (lambda (stream _char)
-       (apply #'vector (el-reader/read-delimited-list ?\] stream t))))
+ ?\[
+ (lambda (stream _char)
+   (cl-values (apply #'vector (el-reader/read-delimited-list ?\] stream t)))))
+
 (el-reader/set-macro-character
- ?\' (lambda (stream _char) `(quote ,(el-reader/read stream t nil t))))
+ ?\' (lambda (stream _char)
+       (cl-values `(quote ,(el-reader/read stream t nil t)))))
 
 (el-reader/set-macro-character
  ?, (lambda (stream _char)
-      (let ((next (el-reader/peek-char stream)))
-        (if (/= ?@ next)
-            `(,(intern ",") ,(el-reader/read stream t nil t))
-          (el-reader/getch stream)
-          `(,(intern ",@") ,(el-reader/read stream t nil t))))))
+      (cl-values
+       (let ((next (el-reader/peek-char stream)))
+         (if (/= ?@ next)
+             `(,(intern ",") ,(el-reader/read stream t nil t))
+           (el-reader/getch stream)
+           `(,(intern ",@") ,(el-reader/read stream t nil t)))))))
 
 (el-reader/set-macro-character
- ?` (lambda (stream _char) `(,(intern "`") ,(el-reader/read stream t nil t))))
+ ?` (lambda (stream _char)
+      (cl-values `(,(intern "`") ,(el-reader/read stream t nil t)))))
+
+(defun el-reader/read-comment (stream _char)
+  (cl-do ((c (el-reader/peek-char stream)
+             (progn
+               (el-reader/getch stream)
+               (el-reader/peek-char stream))))
+      ((= c ?\n) (progn
+                   (el-reader/getch stream)
+                   ;; (el-reader/read stream t nil t)
+                   (cl-values)))))
 
 ;; (defun el-reader/read-comment (stream _char)
 ;;   (cl-do ((c (el-reader/peek-char stream)
@@ -1027,24 +1069,25 @@ leaving the properties intact.  The result is a list of the results, in order."
 ;;                (el-reader/peek-char stream))))
 ;;       ((= c ?\n) (progn
 ;;                    (el-reader/getch stream)
-;;                    (el-reader/read stream t nil t)))))
+;;                    ;; This is the clumsy equivalent to (values) in CL.
+;;                    *el-reader/repeat-read*))))
 
-(defun el-reader/read-comment (stream char)
-  (let* ((control-marker (make-symbol ""))
-         (res control-marker))
-    (while (eq control-marker res)
-      (setf res
-            (catch 'loop
-              (cl-do ((c (el-reader/peek-char stream)
-                         (progn
-                           (el-reader/getch stream)
-                           (el-reader/peek-char stream))))
-                  ((= c ?\n)
-                   (progn
-                     (el-reader/getch stream)
-                     (if (= (el-reader/peek-char stream) char)
-                         (throw 'loop control-marker))
-                     (el-reader/read stream t nil t)))))))))
+;; (defun el-reader/read-comment (stream char)
+;;   (let* ((control-marker (make-symbol ""))
+;;          (res control-marker))
+;;     (while (eq control-marker res)
+;;       (setf res
+;;             (catch 'loop
+;;               (cl-do ((c (el-reader/peek-char stream)
+;;                          (progn
+;;                            (el-reader/getch stream)
+;;                            (el-reader/peek-char stream))))
+;;                   ((= c ?\n)
+;;                    (progn
+;;                      (el-reader/getch stream)
+;;                      (if (= (el-reader/peek-char stream) char)
+;;                          (throw 'loop control-marker))
+;;                      (el-reader/read stream t nil t)))))))))
 
 (el-reader/set-macro-character ?\; #'el-reader/read-comment)
 
@@ -1124,17 +1167,6 @@ leaving the properties intact.  The result is a list of the results, in order."
         (res nil (if (between c ?0 ?9) (+ (* (or res 0) 10) (- c ?0)) res)))
        ((not (between c ?0 ?9)) (el-reader/getch stream c) res))))
 
-;; (defvar *el-reader/classic-dispatch-functions* (make-hash-table)
-;;   "A hashtable which maps from a readtable to a table from a char
-;;   to another table, which in turn maps a sub-char to a function.
-
-;; When char is encountered, fun is called with these arguments:
-;; (stream number sub-char).
-
-;; NUMBER is either a decimal which comes between char and sub-char.
-
-;; DO NOT READ OR MODIFY THIS DIRECTLY!")
-
 (cl-defun el-reader/make-dispatch-macro-character
     (char &optional non-terminating-p (readtable *el-reader/readtable*))
   (when (and (el-reader//memhash
@@ -1145,10 +1177,6 @@ leaving the properties intact.  The result is a list of the results, in order."
                        (el-reader//rt/classic-dispatch-functions readtable))))
     (setf (gethash char (el-reader//rt/classic-dispatch-functions readtable))
           (make-hash-table)))
-  ;; (when (and (el-reader//memhash char *el-reader/classic-dispatch-functions*)
-  ;;            (hash-table-p (gethash char *el-reader/classic-dispatch-functions*)))
-  ;;   (setf (gethash char *el-reader/classic-dispatch-functions*)
-  ;;         (make-hash-table)))
   (el-reader/set-macro-character
    char
    (lambda (stream char)
@@ -1191,7 +1219,7 @@ leaving the properties intact.  The result is a list of the results, in order."
 (el-reader/set-dispatch-macro-character
  ?# ?'
  (lambda (stream _char _number)
-   `(function ,(el-reader/read stream t nil t))))
+   (cl-values `(function ,(el-reader/read stream t nil t)))))
 
 (defun el-reader//replace-placeholder (tree placeholder new-val)
   "Replaces PLACEHOLDER with NEW-VAL.
@@ -1263,12 +1291,14 @@ Recurses on cons and array, destructively modifying TREE."
            r
          (error "invalid-read-syntax \"integer, radix %i\"" radix))))))
 
-(el-reader/set-macro-character ?\} (car (el-reader/get-macro-character ?\))))
+(cl-multiple-value-bind (fun _term)
+    (el-reader/get-macro-character ?\))
+  (el-reader/set-macro-character ?\} fun))
 
 (el-reader/set-macro-character
  ?\{
  (lambda (stream _char)
-   (apply #'el-reader//ht (el-reader/read-delimited-list ?\} stream t))))
+   (cl-values (apply #'el-reader//ht (el-reader/read-delimited-list ?\} stream t)))))
 
 ;; When the toplevel read has been reached, remove all advice placed by #n= and
 ;; #n# code.  This will be placed so that it is run /after/ said other advice.
@@ -1491,54 +1521,87 @@ Recurses on cons and array, destructively modifying TREE."
       (signal 'reader-error "Invalid char")))))
 
 (cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
-                                    recursive-p)
-  (let* ((input-stream (el-reader//get-getch-state input-stream))
-         (x (condition-case c
-                (el-reader/getch input-stream)
-              (end-of-file
-               (if eof-error-p
-                   (signal (car c) (cdr c))
-                 (cl-return-from el-reader/read eof-value))))))
-    (when (not recursive-p)
-      (setf *el-reader//read-objects* nil
-            *el-reader//circular-read-functions* nil))
-    (cond ((el-reader//rt/invalid-syntax-type-p *el-reader/readtable* x)
-           (signal 'reader-error (list "Invalid char" x)))
-          ((el-reader//rt/whitespacep *el-reader/readtable* x)
-           (el-reader/read input-stream eof-error-p eof-value recursive-p))
-          ((el-reader//rt/terminating-macro-char-p *el-reader/readtable* x)
-           (let ((*el-reader//allow-single-dot-symbol* nil))
-             (funcall (gethash x (el-reader//rt/term-mac-fns
-                                  *el-reader/readtable*))
-                      input-stream x)))
-          ((el-reader//rt/non-terminating-macro-char-p *el-reader/readtable* x)
-           (let ((*el-reader//allow-single-dot-symbol* nil))
-             (funcall (gethash x (el-reader//rt/non-term-mac-fns
-                                  *el-reader/readtable*))
-                      input-stream x)))
-          ((el-reader//rt/single-escape-char-p *el-reader/readtable* x)
-           ;; (signal 'reader-error "Single escape is not yet supported")
-           (el-reader//step-8
-            input-stream
-            (el-reader//put-escaped-prop
-             (el-reader//force-alphabetic (el-reader/getch input-stream)))
-            x))
-          ((el-reader//rt/multiple-escape-char-p *el-reader/readtable* x)
-           ;; (signal 'reader-error "Multiple escape is not yet supported")
-           ;; Begin an empty token and proceeed with step 9.
-           (el-reader//step-9 input-stream "" x)
-           ;; (let ((y (el-reader/getch input-stream)))
-           ;;   ;; Begin an empty token and proceeed with step 9.
-           ;;   (el-reader//step-9 input-stream ""))
-           )
-          ((el-reader//rt/constituentp *el-reader/readtable* x)
-           (el-reader//step-8 input-stream
-                              (el-reader//defaults-to-str-props x)
-                              x))
-          (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!")))))
+                                    recursive-p
+                                    keys)
+  (let ((res *el-reader/repeat-read*))
+    (while (eq res *el-reader/repeat-read*)
+      (setf
+       res
+       (let* ((input-stream (el-reader//get-getch-state input-stream))
+              (x (condition-case c
+                     (el-reader/getch input-stream)
+                   (end-of-file
+                    (if eof-error-p
+                        (signal (car c) (cdr c))
+                      (cl-return-from el-reader/read eof-value))))))
+         (when (not recursive-p)
+           (setf *el-reader//read-objects* nil
+                 *el-reader//circular-read-functions* nil))
+         (cond ((el-reader//rt/invalid-syntax-type-p *el-reader/readtable* x)
+                (signal 'reader-error (list "Invalid char" x)))
+               ((el-reader//rt/whitespacep *el-reader/readtable* x)
+                ;; (el-reader/read input-stream eof-error-p eof-value
+                ;;                 recursive-p)
+                *el-reader/repeat-read*)
+               ((el-reader//rt/terminating-macro-char-p
+                 *el-reader/readtable* x)
+                (let ((*el-reader//allow-single-dot-symbol* nil))
+                  (let ((res (funcall (gethash x (el-reader//rt/term-mac-fns
+                                                  *el-reader/readtable*))
+                                      input-stream x)))
+                    (when (not (listp res))
+                      (error (s-join " " '("Read-macro functions must always"
+                                           "return a (possibly empty) list."))))
+                    res)))
+               ((el-reader//rt/non-terminating-macro-char-p
+                 *el-reader/readtable* x)
+                (let ((*el-reader//allow-single-dot-symbol* nil))
+                  (let ((res (funcall (gethash x (el-reader//rt/non-term-mac-fns
+                                                  *el-reader/readtable*))
+                                      input-stream x)))
+                    (when (not (listp res))
+                      (error (s-join " " '("Read-macro functions must always"
+                                           "return a (possibly empty) list."))))
+                    res
+                    ;; (or res
+                    ;;     *el-reader/repeat-read*)
+                    )))
+               ((el-reader//rt/single-escape-char-p *el-reader/readtable* x)
+                (cl-values (el-reader//step-8
+                   input-stream
+                   (el-reader//put-escaped-prop
+                    (el-reader//force-alphabetic
+                     (el-reader/getch input-stream)))
+                   x)))
+               ((el-reader//rt/multiple-escape-char-p *el-reader/readtable* x)
+                (cl-values (el-reader//step-9 input-stream "" x)))
+               ((el-reader//rt/constituentp *el-reader/readtable* x)
+                (cl-values (el-reader//step-8 input-stream
+                                     (el-reader//defaults-to-str-props x)
+                                     x)))
+               (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!"))))))
+    (if (plist-get keys :return-list)
+        res
+      (if res
+          (car res)
+        (let ((res))
+          (while (not res)
+            (setf res
+                  (el-reader/read input-stream eof-error-p eof-value recursive-p
+                                  '(:return-list t))))
+          (car res))))))
+
+(cl-defun el-reader/read-preserving-whitespace (&optional input-stream
+                                                          (eof-error-p t)
+                                                          eof-value recursive-p)
+  (if recursive-p
+      (el-reader/read input-stream eof-error-p eof-value recursive-p)
+    (let ((*el-reader/preserve-whitespace* t))
+      (el-reader/read input-stream eof-error-p eof-value recursive-p))))
 
 (define-advice el-reader/read
-    (:after (&optional _input-stream _eof-error-p _eof-value recursive-p)
+    (:after (&optional _input-stream _eof-error-p _eof-value recursive-p
+                       &rest _ignore)
             nil
             -100)
   (when (not recursive-p)
