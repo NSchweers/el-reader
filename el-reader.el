@@ -65,7 +65,8 @@
 ;;;variables defined with -*- syntax (see first line).  This is why `setf' is
 ;;;used here.
 
-(eval-and-compile (make-variable-buffer-local 'use-el-reader))
+(eval-and-compile (make-variable-buffer-local 'use-el-reader)
+                  (make-variable-buffer-local 'el-reader-bytecode))
 
 ;; NOTE: put the following line at the start of any buffer which shall use
 ;; el-reader (without the comment chars, of course).
@@ -348,21 +349,31 @@ If at end of stream, throws end-of-file")
 
 The default method checks if OBJ is a function, as cl-defgeneric
 cannot dispatch on functions.  Otherwise, OBJ is returned as is."
-  (message "el-reader//get-getch-state called with %S" obj)
   (if (functionp obj)
-      (make-instance 'el-reader//function-read-state :function obj)
+      (if (eq obj #'get-file-char)
+          (make-instance
+           'el-reader//function-read-state
+           :function
+           (let ((unread-chars))
+             (lambda (&optional c)
+               (if c (progn (push c unread-chars) nil)
+                 (if unread-chars
+                     (pop unread-chars)
+                   (funcall obj))))))
+        (make-instance 'el-reader//function-read-state :function obj))
     obj))
 
-(cl-defmethod el-reader//get-getch-state ((gfc (eql 'get-file-char)))
-  (make-instance
-   'el-reader//function-read-state
-   :function
-   (let ((unread-chars))
-     (lambda (&optional c)
-       (if c (progn (push c unread-chars) nil)
-         (if unread-chars
-             (pop unread-chars)
-           (funcall gfc)))))))
+;; (cl-defmethod el-reader//get-getch-state ((gfc (eql 'get-file-char)))
+;;   (message "Appropriate method for get-getch-state called!")
+;;   (make-instance
+;;    'el-reader//function-read-state
+;;    :function
+;;    (let ((unread-chars))
+;;      (lambda (&optional c)
+;;        (if c (progn (push c unread-chars) nil)
+;;          (if unread-chars
+;;              (pop unread-chars)
+;;            (funcall gfc)))))))
 
 (cl-defmethod el-reader//get-getch-state ((s string))
   (make-instance 'el-reader//string-reader-state :string s))
@@ -1686,9 +1697,16 @@ Recurses on cons and array, destructively modifying TREE."
   (funcall (apply #'-compose *el-reader//circular-read-functions*) r))
 
 (define-advice read (:around (oldfun &optional stream) el-reader//replace-read)
-  (message "read-advice: use-el-reader: %s; stream: %S" use-el-reader stream)
-  (if use-el-reader
+  ;; Don’t use this if we’re reading bytecode.  Emacs elegantly uses its reader
+  ;; to read bytecode, but they use weird read-macros which have not been
+  ;; implemented. Also they use a weird function called `get-file-char', which
+  ;; does not take an optional argument.
+  (message "use-el-reader = %S\tel-reader-bytecode = %S"
+           use-el-reader el-reader-bytecode)
+  (if (and use-el-reader (not ;; (s-ends-with? ".elc" (buffer-name))
+                          el-reader-bytecode))
       (progn
+        (message "using el-reader")
         (el-reader/read stream))
     (funcall oldfun stream)))
 
