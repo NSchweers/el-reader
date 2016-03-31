@@ -94,17 +94,17 @@ Keys and values are given alternating in args."
       h))
 
   ;; (cl-define-compiler-macro el-reader//ht (&rest args)
-  ;;     "This compiler macro performs loop unrolling.
+;;       "This compiler macro performs loop unrolling.
 
-  ;; Unfortunately it does a maximal unroll."
-  ;;     (cl-labels ((proc-entry (k v h) `(puthash ,k ,v ,h)))
-  ;;       (if (cl-oddp (length args))
-  ;;           (error "Odd number of args passed")
-  ;;         (let ((h (cl-gensym)))
-  ;;           `(let ((,h (make-hash-table)))
-  ;;              ,@(cl-loop for (key value) on args by #'cddr
-  ;;                         collect (proc-entry key value h))
-  ;;              ,h)))))
+;; Unfortunately it does a maximal unroll."
+;;       (cl-labels ((proc-entry (k v h) `(puthash ,k ,v ,h)))
+;;         (if (cl-oddp (length args))
+;;             (error "Odd number of args passed")
+;;           (let ((h (cl-gensym)))
+;;             `(let ((,h (make-hash-table)))
+;;                ,@(cl-loop for (key value) on args by #'cddr
+;;                           collect (proc-entry key value h))
+;;                ,h)))))
 
 ;;; In COMMON LISP traits are hardwired to the parser, we should not copy this
 ;;; mistake.  Also, define a mapping from digits to values.  I.e. make it
@@ -1381,7 +1381,11 @@ Recurses on cons and array, destructively modifying TREE."
 (el-reader/set-macro-character
  ?\{
  (lambda (stream _char)
-   (cl-values (apply #'el-reader//ht (el-reader/read-delimited-list ?\} stream t)))))
+   (cl-values
+    (let ((k-v (el-reader/read-delimited-list ?\} stream t)))
+      (if (= (mod (length k-v) 2) 1)
+          (error "Invalid syntax: {}")
+        `(el-reader//ht ,@k-v))))))
 
 ;; When the toplevel read has been reached, remove all advice placed by #n= and
 ;; #n# code.  This will be placed so that it is run /after/ said other advice.
@@ -1701,12 +1705,13 @@ Recurses on cons and array, destructively modifying TREE."
   ;; to read bytecode, but they use weird read-macros which have not been
   ;; implemented. Also they use a weird function called `get-file-char', which
   ;; does not take an optional argument.
-  (message "use-el-reader = %S\tel-reader-bytecode = %S"
-           use-el-reader el-reader-bytecode)
+
+  ;; (message "use-el-reader = %S\tel-reader-bytecode = %S"
+  ;;          use-el-reader el-reader-bytecode)
   (if (and use-el-reader (not ;; (s-ends-with? ".elc" (buffer-name))
                           el-reader-bytecode))
       (progn
-        (message "using el-reader")
+        ;; (message "using el-reader")
         (el-reader/read stream))
     (funcall oldfun stream)))
 
