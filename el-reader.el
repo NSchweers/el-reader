@@ -1087,93 +1087,6 @@ leaving the properties intact.  The result is a list of the results, in order."
          (reverse res-list))))
     end-res))
 
-(defun el-reader//read-lisp-list (stream _char)
-  (cl-values
-   (let ((*el-reader//allow-single-dot-symbol* t))
-     (let ((l (el-reader/read-delimited-list ?\) stream t)))
-       (let ((l- (if (and (>= (seq-length l) 3)
-                          (eq (seq-elt l (- (length l) 2)) (intern ".")))
-                     (append (seq-subseq l 0 (- (seq-length l) 2))
-                             (seq-elt l (1- (seq-length l))))
-                   l)))
-         (if (not (cl-loop for s in l- if (eq s (intern ".")) collect s))
-             (prog1 l-
-               (unintern "." obarray))
-           (unintern "." obarray)
-           (signal 'reader-error "invalid-read-syntax: \".\"")))))))
-
-(el-reader/set-macro-character ?\( #'el-reader//read-lisp-list)
-(el-reader/set-macro-character ?\" #'el-reader/read-string)
-
-(el-reader/set-macro-character ?? #'el-reader/read-char t)
-
-(el-reader/set-macro-character ?\) (lambda (&rest _args)
-                                     (signal 'unbalanced-sexp nil)))
-(cl-multiple-value-bind (fun _term)
-    (el-reader/get-macro-character ?\))
-  (el-reader/set-macro-character ?\] fun))
-
-(el-reader/set-macro-character
- ?\[
- (lambda (stream _char)
-   (cl-values (apply #'vector (el-reader/read-delimited-list ?\] stream t)))))
-
-(el-reader/set-macro-character
- ?\' (lambda (stream _char)
-       (cl-values `(quote ,(el-reader/read stream t nil t)))))
-
-(el-reader/set-macro-character
- ?, (lambda (stream _char)
-      (cl-values
-       (let ((next (el-reader/peek-char stream)))
-         (if (/= ?@ next)
-             `(,(intern ",") ,(el-reader/read stream t nil t))
-           (el-reader/getch stream)
-           `(,(intern ",@") ,(el-reader/read stream t nil t)))))))
-
-(el-reader/set-macro-character
- ?` (lambda (stream _char)
-      (cl-values `(,(intern "`") ,(el-reader/read stream t nil t)))))
-
-(defun el-reader/read-comment (stream _char)
-  (cl-do ((c (el-reader/peek-char stream)
-             (progn
-               (el-reader/getch stream)
-               (el-reader/peek-char stream))))
-      ((= c ?\n) (progn
-                   (el-reader/getch stream)
-                   ;; (el-reader/read stream t nil t)
-                   (cl-values)))))
-
-;; (defun el-reader/read-comment (stream _char)
-;;   (cl-do ((c (el-reader/peek-char stream)
-;;              (progn
-;;                (el-reader/getch stream)
-;;                (el-reader/peek-char stream))))
-;;       ((= c ?\n) (progn
-;;                    (el-reader/getch stream)
-;;                    ;; This is the clumsy equivalent to (values) in CL.
-;;                    *el-reader/repeat-read*))))
-
-;; (defun el-reader/read-comment (stream char)
-;;   (let* ((control-marker (make-symbol ""))
-;;          (res control-marker))
-;;     (while (eq control-marker res)
-;;       (setf res
-;;             (catch 'loop
-;;               (cl-do ((c (el-reader/peek-char stream)
-;;                          (progn
-;;                            (el-reader/getch stream)
-;;                            (el-reader/peek-char stream))))
-;;                   ((= c ?\n)
-;;                    (progn
-;;                      (el-reader/getch stream)
-;;                      (if (= (el-reader/peek-char stream) char)
-;;                          (throw 'loop control-marker))
-;;                      (el-reader/read stream t nil t)))))))))
-
-(el-reader/set-macro-character ?\; #'el-reader/read-comment)
-
 ;; (cl-defun el-reader/make-dispatching-function (&optional (readtable *el-reader/readtable*))
 ;;   (let ((macro-funs (make-hash-table)))
 ;;     ;; Note that the arguments to set must be a key, a function, and optionally
@@ -1297,189 +1210,33 @@ leaving the properties intact.  The result is a list of the results, in order."
         new-function)
   t)
 
-(el-reader/make-dispatch-macro-character ?# nil)
+;; (defun el-reader//replace-placeholder (tree placeholder new-val)
+;;   "Replaces PLACEHOLDER with NEW-VAL.
 
-(el-reader/set-dispatch-macro-character
- ?# ?'
- (lambda (stream _char _number)
-   (cl-values `(function ,(el-reader/read stream t nil t)))))
-
-(defun el-reader//replace-placeholder (tree placeholder new-val)
-  "Replaces PLACEHOLDER with NEW-VAL.
-
-Recurses on cons and array, destructively modifying TREE."
-  (cond ((eq tree placeholder) new-val)
-        ((consp tree)
-         (setcar tree (el-reader//replace-placeholder
-                       (car tree)
-                       placeholder new-val))
-         (setcdr tree (el-reader//replace-placeholder
-                       (cdr tree)
-                       placeholder new-val))
-         tree
-         ;; (mapcar
-         ;;  (lambda (e)
-         ;;    (el-reader//replace-placeholder
-         ;;     e placeholder new-val))
-         ;;  tree)
-         )
-        ((arrayp tree)
-         (cl-loop
-          for i from 0 upto (1- (length tree)) do
-          (setf (aref tree i)
-                (el-reader//replace-placeholder
-                 (aref tree i) placeholder new-val)))
-         tree)
-        (t tree)))
-
-(el-reader/set-dispatch-macro-character
- ?# ?=
- (lambda (stream _char number)
-;;; save a placeholder (these are all unique)
-   (let ((placeholder (cons nil nil))) 
-     ;; (setf (gethash number *el-reader//read-objects*)
-     ;;       placeholder)
-     (push (cons number placeholder) *el-reader//read-objects*)
-     (let ((obj (el-reader/read stream t nil t)))
-       (push (lambda (r)
-               (el-reader//replace-placeholder r placeholder obj)
-               r)
-             *el-reader//circular-read-functions*)
-       obj))))
-
-(el-reader/set-dispatch-macro-character
- ?#
- ?#
- (lambda (_stream _char number)
-   (if (not number)                     ; empty symbol
-       (make-symbol "")
-     (let ((placeholder (assq number *el-reader//read-objects*)))
-       (if (not (consp placeholder))
-           (error "Invalid read syntax: \"%c\"" ?#)
-         (cdr placeholder)))
-     ;; (if (el-reader//memhash
-     ;;      number
-     ;;      (el-reader//rt/classic-dispatch-functions
-     ;;       *el-reader/readtable*))
-     ;;     (el-reader//rt/classic-dispatch-functions *el-reader/readtable*)
-     ;;   (error "Invalid read syntax: \"%c\"" ?#))
-     )))
-
-(el-reader/set-dispatch-macro-character
- ?# ?r
- (lambda (stream _char radix)
-   (let ((*el-reader/read-base* radix))
-     (let ((r (el-reader/read stream)))
-       (if (integerp r)
-           r
-         (error "invalid-read-syntax \"integer, radix %i\"" radix))))))
-
-(cl-multiple-value-bind (fun _term)
-    (el-reader/get-macro-character ?\))
-  (el-reader/set-macro-character ?\} fun))
-
-(el-reader/set-macro-character
- ?\{
- (lambda (stream _char)
-   (cl-values
-    (let ((k-v (el-reader/read-delimited-list ?\} stream t)))
-      (if (= (mod (length k-v) 2) 1)
-          (error "Invalid syntax: {}")
-        `(el-reader//ht ,@k-v))))))
-
-;; When the toplevel read has been reached, remove all advice placed by #n= and
-;; #n# code.  This will be placed so that it is run /after/ said other advice.
-;; (el-reader//removable-advice
-;;  (:after (symbol-function 'el-reader/read) nil '((depth . -100)))
-;;  (&optional input-stream eof-error-p eof-value recursive-p)
-;;  (when recursive-p
-;;    (dolist (f *el-reader//circular-read-advice*)
-;;      (funcall f))))
-
-;;; The main dispatching macro char: #
-;; (el-reader/set-macro-character ?# (el-reader/make-dispatching-function) t)
-
-;;; Function quote: #'func => (function func)
-;; (el-reader/set-dispatch-macro-function
-;;  (car (el-reader/get-macro-character ?#))
-;;  ?' (lambda (stream char)
-;;       `(function ,(el-reader/read stream))))
-;;; Read circular objects: #1=(a #1#)
-
-;; (defun el-reader/read-circle (stream char number)
-;;   ;; Unread the first char, as it is part of the number
-;;   (el-reader/getch stream char)
-;;   ;; Set = as a terminating macro char.  It does not need any meaning, as it
-;;   ;; is only used, to end the number.  123= shall read as the number 123, not as
-;;   ;; the symbol 123=.
-
-;;   (let ((backup-for-= (el-reader/get-macro-character ?=))
-;;         (read-objects (make-hash-table)))
-;;     (el-reader/set-macro-character
-;;      ?=
-;;      (lambda (stream char)
-;;        (error "Invalid read syntax: \"%c\"" char))
-;;      t)
-;;     (let ((n (el-reader/read stream t nil t)))
-;;       (el-reader/set-macro-character ?= (car backup-for-=) (cadr backup-for-=))
-;;       (let ((obj (el-reader/read stream t nil t)))
-;;         (setf (gethash n read-objects) obj)))))
-
-;; (cl-defgeneric el-reader/handle-hash-number-macro (stream number char)
-;;   "When #n is read, this function/method is called with the stream, the read
-;;   number (n) and the char which follows.
-
-;; Read macros which only differ in said char may define a method
-;;   using an eql specifier.  This way the readers for #1=, #1# #2rnnn may be
-;;   separated. "
-;;   (error "Invalid read syntax: \"%c\"" ?#))
-
-;; (cl-defmethod el-reader/handle-hash-number-macro (stream number (char (eql ?=)))
-;;   ;; (cons nil nil) is a marker.  It’s only point is to be an object which is
-;;   ;; distinct to all others.  A gensym would have worked too, but a cons is
-;;   ;; smaller. 
-;;   (let ((m (cons number (cons nil nil))))
-;;     (setf *el-reader//read-objects* (cons m *el-reader//read-objects*))
-;;     (let ((res (el-reader/read stream t nil t)))
-;;       ;; Now replace all appropriate marker objects
-;;       (el-reader//replace-placeholder res m res))))
-
-;; (cl-defmethod el-reader/handle-hash-number-macro (stream number (char (eql ?#)))
-;;   ;; Simply return a marker object.
-;;   (assq number *el-reader//read-objects*))
-
-;; (defun el-reader/read-assoc (stream char)
-;;   "Reads an association to an object, an object, and replaces references in read
-;;   object."
-;;   (let ((backup-for-= (el-reader/get-macro-character ?=))
-;;         ;; (read-objects (make-hash-table))
-;;         )
-;;     ;; (el-reader/set-macro-character
-;;     ;;  ?=
-;;     ;;  (lambda (stream char)
-;;     ;;    (error "Invalid read syntax: \"%c\"" char))
-;;     ;;  t)
-;;     (el-reader/getch stream char)
-
-;;     (let ((n (el-reader//read-decimal stream)))
-;;       ;; (el-reader/set-macro-character ?= (first backup-for-=)
-;;       ;;                                (second backup-for-=))
-;;       (el-reader/handle-hash-number-macro stream n (el-reader/getch stream))
-;;       ;; (setf *el-reader//read-objects* (cons (cons n (cons nil nil))
-;;       ;;                                      *el-reader//read-objects*))
-;;       ;; (let ((obj (el-reader/read stream t nil t)))
-;;       ;;   )
-;;       )))
-    
-; Walk the object to replace references.
-                                        ;; (dotimes (i 10)
-;;   (el-reader/set-dispatch-macro-function
-;;    (car (el-reader/get-macro-character ?#))
-;;    (+ ?0 i) #'el-reader/read-assoc))
-
-;; (cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
-;;                                     recursive-p)
-;;   (el-reader/generic-read input-stream eof-error-p eof-value recursive-p))
+;; Recurses on cons and array, destructively modifying TREE."
+;;   (cond ((eq tree placeholder) new-val)
+;;         ((consp tree)
+;;          (setcar tree (el-reader//replace-placeholder
+;;                        (car tree)
+;;                        placeholder new-val))
+;;          (setcdr tree (el-reader//replace-placeholder
+;;                        (cdr tree)
+;;                        placeholder new-val))
+;;          tree
+;;          ;; (mapcar
+;;          ;;  (lambda (e)
+;;          ;;    (el-reader//replace-placeholder
+;;          ;;     e placeholder new-val))
+;;          ;;  tree)
+;;          )
+;;         ((arrayp tree)
+;;          (cl-loop
+;;           for i from 0 upto (1- (length tree)) do
+;;           (setf (aref tree i)
+;;                 (el-reader//replace-placeholder
+;;                  (aref tree i) placeholder new-val)))
+;;          tree)
+;;         (t tree)))
 
 (cl-defun el-reader//put-escaped-prop (s &optional (from 0) (to (length s)))
   (put-text-property
@@ -1542,7 +1299,7 @@ Recurses on cons and array, destructively modifying TREE."
     (while t
       (setf y (condition-case nil
                (el-reader/getch input-stream)
-             (end-of-file (cl-return-from el-reader/read
+             (end-of-file (cl-return-from el-reader//step-8
                             (el-reader//process-token token)))))
       (cond ((el-reader//rt/invalid-syntax-type-p *el-reader/readtable* y)
              (signal 'reader-error (list "Invalid character" y)))
@@ -1611,17 +1368,17 @@ Recurses on cons and array, destructively modifying TREE."
 (cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
                                     recursive-p
                                     keys)
-  (let ((res *el-reader/repeat-read*))
+  (let ((res *el-reader/repeat-read*)
+        (input-stream (el-reader//get-getch-state input-stream)))
     (while (eq res *el-reader/repeat-read*)
       (setf
        res
-       (let* ((input-stream (el-reader//get-getch-state input-stream))
-              (x (condition-case c
-                     (el-reader/getch input-stream)
-                   (end-of-file
-                    (if eof-error-p
-                        (signal (car c) (cdr c))
-                      (cl-return-from el-reader/read eof-value))))))
+       (let ((x (condition-case c
+                    (el-reader/getch input-stream)
+                  (end-of-file
+                   (if eof-error-p
+                       (signal (car c) (cdr c))
+                     (cl-return-from el-reader/read eof-value))))))
          (when (not recursive-p)
            (setf *el-reader//read-objects* nil
                  *el-reader//circular-read-functions* nil))
@@ -1656,17 +1413,17 @@ Recurses on cons and array, destructively modifying TREE."
                     )))
                ((el-reader//rt/single-escape-char-p *el-reader/readtable* x)
                 (cl-values (el-reader//step-8
-                   input-stream
-                   (el-reader//put-escaped-prop
-                    (el-reader//force-alphabetic
-                     (el-reader/getch input-stream)))
-                   x)))
+                            input-stream
+                            (el-reader//put-escaped-prop
+                             (el-reader//force-alphabetic
+                              (el-reader/getch input-stream)))
+                            x)))
                ((el-reader//rt/multiple-escape-char-p *el-reader/readtable* x)
                 (cl-values (el-reader//step-9 input-stream "" x)))
                ((el-reader//rt/constituentp *el-reader/readtable* x)
                 (cl-values (el-reader//step-8 input-stream
-                                     (el-reader//defaults-to-str-props x)
-                                     x)))
+                                              (el-reader//defaults-to-str-props x)
+                                              x)))
                (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!"))))))
     (if (plist-get keys :return-list)
         res
@@ -1686,6 +1443,134 @@ Recurses on cons and array, destructively modifying TREE."
       (el-reader/read input-stream eof-error-p eof-value recursive-p)
     (let ((*el-reader/preserve-whitespace* t))
       (el-reader/read input-stream eof-error-p eof-value recursive-p))))
+
+;; Now that we have defined the mechanism, it is time to define our macros, so
+;; we can read something other than symbols and numbers :)
+
+(defun el-reader//read-lisp-list (stream _char)
+  (cl-values
+   (let ((*el-reader//allow-single-dot-symbol* t))
+     (let ((l (el-reader/read-delimited-list ?\) stream t)))
+       (let ((l- (if (and (>= (seq-length l) 3)
+                          (eq (seq-elt l (- (length l) 2)) (intern ".")))
+                     (append (seq-subseq l 0 (- (seq-length l) 2))
+                             (seq-elt l (1- (seq-length l))))
+                   l)))
+         (if (not (cl-loop for s in l- if (eq s (intern ".")) collect s))
+             (prog1 l-
+               (unintern "." obarray))
+           (unintern "." obarray)
+           (signal 'reader-error "invalid-read-syntax: \".\"")))))))
+
+(defun el-reader//read-comment (stream _char)
+  (cl-do ((c (el-reader/peek-char stream)
+             (progn
+               (el-reader/getch stream)
+               (el-reader/peek-char stream))))
+      ((= c ?\n) (progn
+                   (el-reader/getch stream)
+                   (cl-values)))))
+
+(defun el-reader//read-vector (stream _char)
+  (cl-values (apply #'vector (el-reader/read-delimited-list ?\] stream t))))
+
+;; Should we ever come across a closing paren, we know it is unbalanced, as
+;; read-demilited-list consumes the closing character.
+
+(el-reader/set-macro-character ?\) (lambda (&rest _args)
+                                     (signal 'unbalanced-sexp nil)))
+
+;; Make ] do the same thing as ), namely signal an error.
+
+(cl-multiple-value-bind (fun _term)
+    (el-reader/get-macro-character ?\))
+  (el-reader/set-macro-character ?\] fun))
+
+(el-reader/set-macro-character ?\( #'el-reader//read-lisp-list)
+
+(el-reader/set-macro-character ?\" #'el-reader/read-string)
+
+(el-reader/set-macro-character ?? #'el-reader/read-char t)
+
+(el-reader/set-macro-character ?\[ #'el-reader//read-vector)
+
+(defun el-reader//read-quote (stream _char)
+  (cl-values `',(el-reader/read stream t nil t)))
+
+(defun el-reader//read-backquote (stream _char)
+      (cl-values `(,(intern "`") ,(el-reader/read stream t nil t))))
+
+(defun el-reader//read-comma (stream _char)
+      (cl-values
+       (let ((next (el-reader/peek-char stream)))
+         (if (/= ?@ next)
+             `(,(intern ",") ,(el-reader/read stream t nil t))
+           (el-reader/getch stream)
+           `(,(intern ",@") ,(el-reader/read stream t nil t))))))
+
+(el-reader/set-macro-character ?\' #'el-reader//read-quote)
+
+(el-reader/set-macro-character ?, #'el-reader//read-comma)
+
+(el-reader/set-macro-character ?` #'el-reader//read-backquote)
+
+(el-reader/set-macro-character ?\; #'el-reader//read-comment)
+
+(defun el-reader//read-int-radix (stream _char radix)
+   (let ((*el-reader/read-base* radix))
+     (let ((r (el-reader/read stream)))
+       (if (integerp r)
+           r
+         (error "invalid-read-syntax \"integer, radix %i\"" radix)))))
+
+(el-reader/set-dispatch-macro-character ?# ?r #'el-reader//read-int-radix)
+
+(cl-multiple-value-bind (fun _term)
+    (el-reader/get-macro-character ?\))
+  (el-reader/set-macro-character ?\} fun))
+
+(defun el-reader//read-hash-table (stream _char)
+   (cl-values
+    (let ((k-v (el-reader/read-delimited-list ?\} stream t)))
+      (if (= (mod (length k-v) 2) 1)
+          (error "Invalid syntax: {}")
+        `(el-reader//ht ,@k-v)))))
+
+(el-reader/set-macro-character ?\{ #'el-reader//read-hash-table)
+;; While # is a non-terminating char in CL, el has no such thing, so we won’t
+;; make it non-terminating.
+
+(el-reader/make-dispatch-macro-character ?# nil)
+
+(defun el-reader//read-function-quote (stream _char _number)
+   (cl-values `(function ,(el-reader/read stream t nil t))))
+
+(el-reader/set-dispatch-macro-character ?# ?' #'el-reader//read-function-quote)
+
+(defun el-reader//read-= (stream _char number)
+;;; save a placeholder (these are all unique)
+   (let ((placeholder (cons nil nil))) 
+     ;; (setf (gethash number *el-reader//read-objects*)
+     ;;       placeholder)
+     (push (cons number placeholder) *el-reader//read-objects*)
+     (let ((obj (el-reader/read stream t nil t)))
+       (push (lambda (r)
+               (el-reader//replace-placeholder r placeholder obj)
+               r)
+             *el-reader//circular-read-functions*)
+       obj)))
+
+(el-reader/set-dispatch-macro-character ?# ?= #'el-reader//read-=)
+
+(defun el-reader//read-hash-num-hash (_stream _char number)
+   (if (not number)                     ; empty symbol
+       (make-symbol "")
+     (let ((placeholder (assq number *el-reader//read-objects*)))
+       (if (not (consp placeholder))
+           (error "Invalid read syntax: \"%c\"" ?#)
+         (cdr placeholder)))))
+
+(el-reader/set-dispatch-macro-character ?# ?# #'el-reader//read-hash-num-hash)
 
 (define-advice el-reader/read
     (:after (&optional _input-stream _eof-error-p _eof-value recursive-p
