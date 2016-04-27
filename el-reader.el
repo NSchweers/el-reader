@@ -1564,13 +1564,29 @@ leaving the properties intact.  The result is a list of the results, in order."
 
 (defun el-reader//read-hash-num-hash (_stream _char number)
    (if (not number)                     ; empty symbol
-       (make-symbol "")
+       (intern "")
      (let ((placeholder (assq number *el-reader//read-objects*)))
        (if (not (consp placeholder))
            (error "Invalid read syntax: \"%c\"" ?#)
          (cdr placeholder)))))
 
 (el-reader/set-dispatch-macro-character ?# ?# #'el-reader//read-hash-num-hash)
+
+(defun el-reader//read-char-table (_stream _char _number)
+  ;; Syntax:
+  ;; - The first element is the default value
+  ;; - The second element of #^[...] is the parent.
+  ;; - The third element is the type.
+  ;; - The char-table-extra-slots property of the subtype specifies the number
+  ;;   of extra slots.
+  ;; - 
+  )
+
+(defun el-reader//read-byte-code (stream char _number)
+  (let ((v (el-reader/read-delimited-list ?\] stream t)))
+    (list (apply #'make-byte-code (map 'list #'identity v)))))
+
+(el-reader/set-dispatch-macro-character ?# ?\[ #'el-reader//read-byte-code)
 
 (define-advice el-reader/read
     (:after (&optional _input-stream _eof-error-p _eof-value recursive-p
