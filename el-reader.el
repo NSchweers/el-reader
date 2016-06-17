@@ -1607,13 +1607,8 @@ leaving the properties intact.  The result is a list of the results, in order."
   ;; implemented. Also they use a weird function called `get-file-char', which
   ;; does not take an optional argument.
 
-  ;; (message "use-el-reader = %S\tel-reader-bytecode = %S"
-  ;;          use-el-reader el-reader-bytecode)
-  (if (and use-el-reader (not ;; (s-ends-with? ".elc" (buffer-name))
-                          el-reader-bytecode))
-      (progn
-        ;; (message "using el-reader")
-        (el-reader/read stream))
+  (if (and use-el-reader (not el-reader-bytecode))
+      (el-reader/read stream)
     (funcall oldfun stream)))
 
 (provide 'el-reader)
