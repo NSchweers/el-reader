@@ -3,6 +3,10 @@
 
 (package-file "el-reader.el")
 
+(development
+ (depends-on "f")
+ (depends-on "ert-runner"))
+
 ;; (depends-on "bind-key")
 ;; (depends-on "cask")
 ;; (depends-on "dash")
