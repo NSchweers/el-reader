@@ -150,10 +150,24 @@ evaluated or not."
 
 (ert-deftest elr-test/floatneg-zero ()
   "Reads negative zero"
-  ())
+  (should (= (el-reader/read "-0.0")
+             (read "-0.0"))))
 
-(el-reader/read "1.0e+INF")
+(ert-deftest elr-test/1.0-pos-inf ()
+  "Reads the canonical positive infinity."
+  (should (= (el-reader/read "1.0e+INF")
+             (read "1.0e+INF"))))
+
+(let ((inf ".1e+INF"))
+  (list (type-of (read inf))
+        (read inf)))
 
 1.1e+INF
 
 (/ 0.0 0.0)
+
+-1.0e+NaN
+
+(let ((inf "+1.0e+NaN"))
+  (list (type-of (read inf))
+        (read inf)))

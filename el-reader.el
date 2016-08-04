@@ -613,8 +613,10 @@ syntax-type invalid."
   ((base :initarg :base :initform 10 :type integer)))
 
 (defclass el-reader//exponent-marker (el-reader//syntax-element) ())
+(defclass el-reader//char (el-reader//syntax-element) ())
 
 (defclass el-reader//sign (el-reader//syntax-element) ())
+(defclass el-reader//plus-sign (el-reader//sign) ())
 
 (defclass el-reader//decimal-point (el-reader//syntax-element) ())
 
@@ -720,6 +722,24 @@ syntax-type invalid."
                   (el-reader//make-failed token pos))))
             (el-reader//parse-seq fn (el-reader//parse-kleene-star fn))))
 
+(defun el-reader//parse-single-char (c)
+  (lambda (token pos)
+    (if (= c (string-to-char (substring token pos)))
+        (el-reader//make-result t token pos (1+ pos)
+                                (substring token pos (1+ pos))
+                                (substring token pos)
+                                (make-instance 'el-reader//char :value c))
+      (el-reader//make-failed token pos))))
+
+(defun el-reader//parse-single-char-nocase (c)
+  (lambda (token pos)
+    (if (= (downcase c) (downcase (string-to-char (substring token pos))))
+        (el-reader//make-result t token pos (1+ pos)
+                                (substring token pos (1+ pos))
+                                (substring token pos)
+                                (make-instance 'el-reader//char :value c))
+      (el-reader//make-failed token pos))))
+
 (defun el-reader//parse-exponent-marker (token pos)
   (if (eq (get-text-property pos 'syntax-type token) 'constituent)
       (-if-let (r (seq-filter
@@ -736,6 +756,16 @@ syntax-type invalid."
                                 (make-instance 'el-reader//exponent-marker
                                                :value (car r))))
         (el-reader//make-failed token pos))
+    (el-reader//make-failed token pos)))
+
+(defun el-reader//parse-plus-sign (token pos)
+  (if (and (eq (get-text-property pos 'syntax-type token) 'constituent)
+           (cl-member 'plus-sign (get-text-property pos 'traits token)))
+      (el-reader//make-result
+       t token pos (1+ pos)
+       (substring token pos (1+ pos))
+       (substring token (1+ pos))
+       (make-instance 'el-reader//sign :value 'plus-sign))
     (el-reader//make-failed token pos)))
 
 (defun el-reader//parse-sign (token pos)
@@ -784,7 +814,8 @@ syntax-type invalid."
                                :value (gethash
                                        (string-to-char
                                         (substring token pos (1+ pos)))
-                                       (el-reader//rt/char-to-num *el-reader/readtable*))
+                                       (el-reader//rt/char-to-num
+                                        *el-reader/readtable*))
                                :base *el-reader/read-base*))
     (el-reader//make-failed token pos)))
 
@@ -795,7 +826,27 @@ syntax-type invalid."
            (el-reader//make-failed token pos))
           (t res))))
 
-(fset 'el-reader//parse-exponent
+(defvar *el-reader//parse-inf-marker*
+  (el-reader//parse-seq
+   (el-reader//parse-single-char ?+)
+   (el-reader//parse-single-char ?I)
+   (el-reader//parse-single-char ?N)
+   (el-reader//parse-single-char ?F)))
+
+(defun el-reader//parse-inf-marker (token pos)
+  (funcall *el-reader//parse-inf-marker* token pos))
+
+(defvar *el-reader//parse-nan-marker*
+  (el-reader//parse-seq
+   (el-reader//parse-single-char ?+)
+   (el-reader//parse-single-char ?N)
+   (el-reader//parse-single-char ?a)
+   (el-reader//parse-single-char ?N)))
+
+(defun el-reader//parse-nan-marker (token pos)
+  (funcall *el-reader//parse-nan-marker*))
+
+(defvar *el-reader//parse-exponent*
       (el-reader//parse-seq #'el-reader//parse-exponent-marker
                             (el-reader//parse-optional #'el-reader//parse-sign)
                             (el-reader//parse-plus #'el-reader//parse-digit)))
@@ -904,52 +955,118 @@ Leading zeros are dropped, the rest is returned as is."
                              (el-reader//pf/get-int-part (third exponent))))
          1.0))))
 
-(fset 'el-reader//pf/parse-float
-      (el-reader//ensure-complete-token
-       (el-reader//parse-alt
-        (el-reader//parse-seq
-         (el-reader//parse-optional #'el-reader//parse-sign)
-         (el-reader//parse-kleene-star
-          #'el-reader//parse-decimal-digit)
-         #'el-reader//parse-decimal-point
-         (el-reader//parse-plus #'el-reader//parse-decimal-digit)
-         (el-reader//parse-optional #'el-reader//parse-exponent))
-        (el-reader//parse-seq
-         (el-reader//parse-optional #'el-reader//parse-sign)
-         (el-reader//parse-plus #'el-reader//parse-decimal-digit)
-         (el-reader//parse-optional
-          (el-reader//parse-seq
-           #'el-reader//parse-decimal-point
-           (el-reader//parse-kleene-star
-            #'el-reader//parse-decimal-digit)))
-         #'el-reader//parse-exponent))))
+;; The grammar for floating point numbers has been altered, as CL does not
+;; support syntax for NaN and infinity, while Emacs-Lisp does. 
+
+;; In the original grammar
+;; (http://www.lispworks.com/documentation/lw70/CLHS/Body/02_ca.htm) `exponent'
+;; is replaced with `exponent-or-special-number-marker'
+
+;; exponent ::= exponent-marker [sign] {digit}+
+
+;; infinity-marker ::= exponent-marker '+' 'INF'
+
+;; NaN-marker ::= exponent-marker '+' 'NaN'
+
+;; exponent-or-special-number-marker ::= exponent | infinity-marker
+
+
+;; Note: This is the original grammar:
+
+;; numeric-token  ::=  integer |
+;; 				   ratio   |
+;; 				   float       
+;; integer        ::=  [sign]
+;; 				   decimal-digit+
+;; 				   decimal-point |
+;; 				   [sign]
+;; 				   digit+      
+;; ratio          ::=  [sign]
+;; 				   {digit}+
+;; 				   slash
+;; 				   {digit}+    
+;; float          ::=  [sign]
+;; 				   {decimal-digit}*
+;; 				   decimal-point
+;; 				   {decimal-digit}+
+;; 				   [exponent]  
+;;                     | 
+;; 				   [sign]
+;; 				   {decimal-digit}+
+;; 				   [decimal-point
+;; 					   {decimal-digit}*]
+;; 				   exponent    
+;; exponent       ::=  exponent-marker
+;; 				   [sign]
+;; 				   {digit}+    
+                                       
+;; sign---a sign.                         
+;; slash---a slash                        
+;; decimal-point---a dot.                        
+;; exponent-marker---an exponent marker.                        
+;; decimal-digit---a digit in radix 10.                        
+;; digit---a digit in the current input radix
+
+;; Note: This is the modified grammar to accomodate ELisps float syntax:
+;; numeric-token  ::=  integer |
+;; 				   ratio   |
+;; 				   float       
+;; integer        ::=  [sign]
+;; 				   decimal-digit+
+;; 				   decimal-point |
+;; 				   [sign]
+;; 				   digit+      
+;; ratio          ::=  [sign]
+;; 				   {digit}+
+;; 				   slash
+;; 				   {digit}+    
+;; float          ::=  [sign]
+;; 				   {decimal-digit}*
+;; 				   decimal-point
+;; 				   {decimal-digit}+
+;; 				   [extension]  
+;;                     | 
+;; 				   [sign]
+;; 				   {decimal-digit}+
+;; 				   [decimal-point
+;; 					   {decimal-digit}*]
+;; 				   extension
+;; exponent       ::=  exponent-marker
+;; 				   [sign]
+;; 				   {digit}+
+;; inf-marker     ::= exponent-marker '+INF'
+;; nan-marker     ::= exponent-marker '+NaN'
+;; extension      ::= exponent | exponent-marker (inf-marker | nan-marker)
+                                       
+;; sign---a sign.                         
+;; slash---a slash                        
+;; decimal-point---a dot.                        
+;; exponent-marker---an exponent marker.                        
+;; decimal-digit---a digit in radix 10.                        
+;; digit---a digit in the current input radix
+
+(defvar *el-reader//pf/parse-float*
+  (el-reader//ensure-complete-token
+   (el-reader//parse-alt
+    (el-reader//parse-seq
+     (el-reader//parse-optional #'el-reader//parse-sign)
+     (el-reader//parse-kleene-star
+      #'el-reader//parse-decimal-digit)
+     #'el-reader//parse-decimal-point
+     (el-reader//parse-plus #'el-reader//parse-decimal-digit)
+     (el-reader//parse-optional *el-reader//parse-exponent*))
+    (el-reader//parse-seq
+     (el-reader//parse-optional #'el-reader//parse-sign)
+     (el-reader//parse-plus #'el-reader//parse-decimal-digit)
+     (el-reader//parse-optional
+      (el-reader//parse-seq
+       #'el-reader//parse-decimal-point
+       (el-reader//parse-kleene-star
+        #'el-reader//parse-decimal-digit)))
+     *el-reader//parse-exponent*))))
 
 (defun el-reader//parse-float (token pos)
-  (let* ((flt (el-reader//pf/parse-float token pos)
-          ;; (funcall
-          ;;  (el-reader//ensure-complete-token
-          ;;   (el-reader//parse-alt
-          ;;    (el-reader//parse-seq
-          ;;     (el-reader//parse-optional #'el-reader//parse-sign)
-          ;;     (el-reader//parse-kleene-star
-          ;;      #'el-reader//parse-decimal-digit)
-          ;;     #'el-reader//parse-decimal-point
-          ;;     (el-reader//parse-plus #'el-reader//parse-decimal-digit)
-          ;;     (el-reader//parse-optional #'el-reader//parse-exponent))
-          ;;    (el-reader//parse-seq
-          ;;     (el-reader//parse-optional #'el-reader//parse-sign)
-          ;;     (el-reader//parse-plus #'el-reader//parse-decimal-digit)
-          ;;     (el-reader//parse-optional
-          ;;      (el-reader//parse-seq
-          ;;       #'el-reader//parse-decimal-point
-          ;;       (el-reader//parse-kleene-star
-          ;;        #'el-reader//parse-decimal-digit)))
-          ;;     #'el-reader//parse-exponent)))
-          ;;  token pos)
-          )
-         ;; unused?
-         ;; (res (slot-value flt 'result))
-         )
+  (let* ((flt (funcall *el-reader//pf/parse-float* token pos)))
     ;;; NB: “Left” refers to the grammar given here:
     ;;; http://www.lispworks.com/documentation/lw70/CLHS/Body/02_ca.htm Left
     ;;; mereley means that it is the first case, rather than the latter.  This
@@ -964,7 +1081,7 @@ Leading zeros are dropped, the rest is returned as is."
           :value (el-reader//pf/fe (slot-value flt 'result))))
       flt)))
 
-(fset 'el-reader//pi/parse-integer
+(defvar *el-reader//pi/parse-integer*
       (el-reader//ensure-complete-token
        (el-reader//parse-alt
         (el-reader//parse-seq
@@ -976,7 +1093,7 @@ Leading zeros are dropped, the rest is returned as is."
          (el-reader//parse-plus #'el-reader//parse-digit)))))
 
 (defun el-reader//parse-integer (token pos)
-  (let ((int (el-reader//pi/parse-integer token pos)
+  (let ((int (funcall *el-reader//pi/parse-integer* token pos)
          ;; (funcall
          ;;  (el-reader//ensure-complete-token
          ;;   (el-reader//parse-alt
@@ -998,7 +1115,7 @@ Leading zeros are dropped, the rest is returned as is."
           :value (el-reader//make-int (slot-value int 'result))))
       int)))
 
-(fset 'el-reader//parse-numeric-token
+(defvar *el-reader//parse-numeric-token*
       (el-reader//parse-alt #'el-reader//parse-integer
                             #'el-reader//parse-float))
 
@@ -1071,7 +1188,7 @@ leaving the properties intact.  The result is a list of the results, in order."
      token))))
 
 (defun el-reader//process-token (token)
-  (let ((num? (el-reader//parse-numeric-token token 0)))
+  (let ((num? (funcall *el-reader//parse-numeric-token* token 0)))
     (if (slot-value num? 'success)
         (slot-value (slot-value num? 'result) 'value)
       (el-reader//parse-symbol token 0))))
