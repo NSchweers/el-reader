@@ -418,7 +418,8 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
    (newpos :initarg :newpos :type (or integer marker null)) ;or marker?
    (result-string :initarg :result-string :type (or string null))
    (rest :initarg :rest :type (or string null))
-   (result :initarg :result))
+   (result :initarg :result)
+   (metadata :initarg :metadata :initform nil))
   "A type for the result of a parse.")
 
 (defun el-reader//result/success-p (r)
@@ -603,6 +604,10 @@ syntax-type invalid."
 ;;; away in a future version.  The main reason to strip it, is that Emacs’
 ;;; default reader may be used.  The main reason to keep it, is that this
 ;;; version may be easier to extend.  For now it stays.
+;;; NOTE:  This /must/ stay, at least for the moment.  The reason is that
+;;; otherwise reading of #b, #o, #x and #NNr... via macrochars cannot be
+;;; implemented.  The reason for this is that *el-reader/read-base* is needed.
+
 
 ;;; Create classes for each parse result (digit, exponent, etc.)
 
@@ -611,14 +616,20 @@ syntax-type invalid."
 
 (defclass el-reader//digit (el-reader//syntax-element)
   ((base :initarg :base :initform 10 :type integer)))
+(defclass el-reader//decimal-digit (el-reader//digit)
+  ((base :initform 10)))
 
 (defclass el-reader//exponent-marker (el-reader//syntax-element) ())
+(defclass el-reader//exponent (el-reader//syntax-element) ())
 (defclass el-reader//char (el-reader//syntax-element) ())
 
 (defclass el-reader//sign (el-reader//syntax-element) ())
 (defclass el-reader//plus-sign (el-reader//sign) ())
 
 (defclass el-reader//decimal-point (el-reader//syntax-element) ())
+
+(defclass el-reader//inf-marker (el-reader//syntax-element) ())
+(defclass el-reader//nan-marker (el-reader//syntax-element) ())
 
 ;; We have a number of functions which combine two parsing functions to create a
 ;; new one.  Each of them takes two functions which take a token and starting
@@ -634,6 +645,40 @@ syntax-type invalid."
                       (< (slot-value res 'newpos) (length token))))
              (el-reader//make-failed token pos))
             (t res)))))
+
+;; (defun el-reader//parse-seq (&rest fns)
+;;   (when (null fns)
+;;     (error "At least one argument must be given"))
+;;   (lambda (token pos)
+;;     (let ((r (seq-reduce
+;;               (lambda (a f)
+;;                 (if (slot-value a 'success)
+;;                     (with-slots ((a-token token)
+;;                                  (a-newpos newpos)
+;;                                  (a-pos pos)
+;;                                  (a-result result))
+;;                         a
+;;                       (let ((tmp (funcall f a-token
+;;                                           a-newpos)))
+;;                         (with-slots ((tmp-success success)
+;;                                      (tmp-newpos newpos)
+;;                                      (tmp-rest rest)
+;;                                      (tmp-result result))
+;;                             tmp
+;;                           (if tmp-success
+;;                               (el-reader//make-result
+;;                                t token pos tmp-newpos
+;;                                (substring a-token
+;;                                           a-pos
+;;                                           tmp-newpos)
+;;                                tmp-rest
+;;                                (cons tmp-result a-result))
+;;                             (el-reader//make-failed token pos)))))
+;;                   (el-reader//make-failed token pos)))
+;;               (cdr fns)
+;;               (let ((tmp (funcall (car fns) token pos)))
+;;                 (clone tmp :result (list (slot-value tmp 'result)))))))
+;;       (clone r :result (reverse (slot-value r 'result))))))
 
 (defun el-reader//parse-seq (&rest fns)
   (when (null fns)
@@ -666,68 +711,111 @@ syntax-type invalid."
                   (el-reader//make-failed token pos)))
               (cdr fns)
               (let ((tmp (funcall (car fns) token pos)))
-                (clone tmp :result (list (slot-value tmp 'result)))))))
-      (clone r :result (reverse (slot-value r 'result))))))
+                (setf (slot-value tmp 'result) (list (slot-value tmp 'result)))
+                tmp))))
+      (setf (slot-value r 'result) (reverse (slot-value r 'result)))
+      r)))
+
+;; (defun el-reader//parse-alt (&rest fns)
+;;   (when (null fns)
+;;     (error "At least one argument must be given"))
+;;   (lambda (token pos)
+;;     (cl-labels ((helper (fns)
+;;                         (if (null fns)
+;;                             (el-reader//make-failed token pos)
+;;                           (let ((res (funcall (car fns) token pos)))
+;;                             (if (slot-value res 'success)
+;;                                 res
+;;                               (helper (cdr fns)))))))
+;;       (helper fns))))
 
 (defun el-reader//parse-alt (&rest fns)
   (when (null fns)
     (error "At least one argument must be given"))
   (lambda (token pos)
-    (cl-labels ((helper (fns)
-                        (if (null fns)
-                            (el-reader//make-failed token pos)
-                          (let ((res (funcall (car fns) token pos)))
-                            (if (slot-value res 'success)
-                                res
-                              (helper (cdr fns)))))))
-      (helper fns))))
+    (let ((n 0)
+          (fs fns)
+          res)
+      (while fs
+        (setf res (funcall (car fs) token pos))
+        (if (slot-value res 'success)
+          ;; This will abort the loop, hence return res.
+            (setf fs nil)
+          (setf fs (cdr fs))))
+      (push (list :type :alt :alt (if (>= n (length fns)) nil n))
+            (slot-value res 'metadata))
+      res)))
 
 (defun el-reader//parse-optional (fn)
   (lambda (token pos)
     (let ((r (funcall fn token pos)))
       (if (slot-value r 'success)
-          r
-        (el-reader//make-result t token pos pos "" (substring token pos)
-                                nil)))))
+          (progn
+            (push (list :type :optional :present t) (slot-value r 'metadata))
+            r)
+        (let ((r- (el-reader//make-result t token pos pos "" (substring token pos)
+                                          nil)))
+          (push (list :type :optional :present nil) (slot-value r- 'metadata))
+          r-)))))
+
+;; (defun el-reader//parse-kleene-star (fn)
+;;   (lambda (token pos)
+;;     (cl-labels
+;;         ((helper
+;;           (res)
+;;           (let ((tmp (funcall fn token (slot-value res 'newpos))))
+;;             (if (not (slot-value tmp 'success))
+;;                 (clone res :result (reverse (slot-value res 'result)))
+;;               (helper
+;;                (el-reader//make-result t token (slot-value res 'pos)
+;;                                    (slot-value tmp 'newpos)
+;;                                    (substring token (slot-value res 'pos)
+;;                                               (slot-value tmp 'newpos))
+;;                                    (substring token (slot-value tmp 'newpos))
+;;                                    (cons (slot-value tmp 'result)
+;;                                          (slot-value res 'result))))))))
+;;       (let ((res (funcall fn token pos)))
+;;         (if (not (slot-value res 'success))
+;;             (el-reader//make-result t token pos pos "" (substring token pos)
+;;                                     nil)
+;;           (helper (clone res :result (list (slot-value res 'result)))))))))
 
 (defun el-reader//parse-kleene-star (fn)
   (lambda (token pos)
-    (cl-labels
-        ((helper
-          (res)
-          (let ((tmp (funcall fn token (slot-value res 'newpos))))
-            (if (not (slot-value tmp 'success))
-                (clone res :result (reverse (slot-value res 'result)))
-              (helper
-               (el-reader//make-result t token (slot-value res 'pos)
+    (do* ((res
+           (el-reader//make-result t token pos pos ""
+                                   (substring token pos) nil)
+           (el-reader//make-result t token (slot-value res 'pos)
                                    (slot-value tmp 'newpos)
                                    (substring token (slot-value res 'pos)
                                               (slot-value tmp 'newpos))
-                                   (substring token (slot-value tmp 'newpos))
+                                   (substring token
+                                              (slot-value tmp 'newpos))
                                    (cons (slot-value tmp 'result)
-                                         (slot-value res 'result))))))))
-      (let ((res (funcall fn token pos)))
-        (if (not (slot-value res 'success))
-            (el-reader//make-result t token pos pos "" (substring token pos)
-                                    nil)
-          (helper (clone res :result (list (slot-value res 'result)))))))))
+                                         (slot-value res 'result))))
+          (tmp (funcall fn token (slot-value res 'newpos))
+               (funcall fn token (slot-value tmp 'newpos))))
+        ((not (slot-value tmp 'success))
+         (progn
+           (setf (slot-value res 'result)
+                 (nreverse (slot-value res 'result)))
+           res)))))
 
 (defun el-reader//parse-plus (fn)
-  (-compose (lambda (r)
-              (if (slot-value r 'success)
-                  (clone r :result
-                         (cons (car (slot-value r 'result))
-                               (cadr (slot-value r 'result))))
-                (with-slots (token pos) r
-                  (el-reader//make-failed token pos))))
-            (el-reader//parse-seq fn (el-reader//parse-kleene-star fn))))
+  (-compose
+   (lambda (r)
+     (if (< (length (slot-value r 'result)) 1)
+         (with-slots (token pos) r
+           (el-reader//make-failed token pos))
+       r))
+   (el-reader//parse-kleene-star fn)))
 
 (defun el-reader//parse-single-char (c)
   (lambda (token pos)
     (if (= c (string-to-char (substring token pos)))
         (el-reader//make-result t token pos (1+ pos)
                                 (substring token pos (1+ pos))
-                                (substring token pos)
+                                (substring token (1+ pos))
                                 (make-instance 'el-reader//char :value c))
       (el-reader//make-failed token pos))))
 
@@ -736,8 +824,9 @@ syntax-type invalid."
     (if (= (downcase c) (downcase (string-to-char (substring token pos))))
         (el-reader//make-result t token pos (1+ pos)
                                 (substring token pos (1+ pos))
-                                (substring token pos)
-                                (make-instance 'el-reader//char :value c))
+                                (substring token (1+ pos))
+                                (make-instance 'el-reader//char
+                                               :value (downcase c)))
       (el-reader//make-failed token pos))))
 
 (defun el-reader//parse-exponent-marker (token pos)
@@ -824,32 +913,37 @@ syntax-type invalid."
     (cond ((not (slot-value res 'success))  (el-reader//make-failed token pos))
           ((not (= (slot-value (slot-value res 'result) 'base) 10))
            (el-reader//make-failed token pos))
-          (t res))))
+          (t (progn
+               (setf (slot-value res 'result)
+                     (make-instance 'el-reader//decimal-digit
+                                    :value (slot-value (slot-value res 'result) 'value)
+                                    :base 10))
+               res)))))
 
-(defvar *el-reader//parse-inf-marker*
-  (el-reader//parse-seq
-   (el-reader//parse-single-char ?+)
-   (el-reader//parse-single-char ?I)
-   (el-reader//parse-single-char ?N)
-   (el-reader//parse-single-char ?F)))
+;; (defvar *el-reader//parse-inf-marker*
+;;   (el-reader//parse-seq
+;;    (el-reader//parse-single-char ?+)
+;;    (el-reader//parse-single-char ?I)
+;;    (el-reader//parse-single-char ?N)
+;;    (el-reader//parse-single-char ?F)))
 
-(defun el-reader//parse-inf-marker (token pos)
-  (funcall *el-reader//parse-inf-marker* token pos))
+;; (defun el-reader//parse-inf-marker (token pos)
+;;   (funcall *el-reader//parse-inf-marker* token pos))
 
-(defvar *el-reader//parse-nan-marker*
-  (el-reader//parse-seq
-   (el-reader//parse-single-char ?+)
-   (el-reader//parse-single-char ?N)
-   (el-reader//parse-single-char ?a)
-   (el-reader//parse-single-char ?N)))
+;; (defvar *el-reader//parse-nan-marker*
+;;   (el-reader//parse-seq
+;;    (el-reader//parse-single-char ?+)
+;;    (el-reader//parse-single-char ?N)
+;;    (el-reader//parse-single-char ?a)
+;;    (el-reader//parse-single-char ?N)))
 
-(defun el-reader//parse-nan-marker (token pos)
-  (funcall *el-reader//parse-nan-marker*))
+;; (defun el-reader//parse-nan-marker (token pos)
+;;   (funcall *el-reader//parse-nan-marker* token pos))
 
-(defvar *el-reader//parse-exponent*
-      (el-reader//parse-seq #'el-reader//parse-exponent-marker
-                            (el-reader//parse-optional #'el-reader//parse-sign)
-                            (el-reader//parse-plus #'el-reader//parse-digit)))
+;; (defvar *el-reader//parse-exponent*
+;;       (el-reader//parse-seq #'el-reader//parse-exponent-marker
+;;                             (el-reader//parse-optional #'el-reader//parse-sign)
+;;                             (el-reader//parse-plus #'el-reader//parse-digit)))
 
 ;; (defun el-reader//parse-exponent (token pos)
 ;;   (funcall
@@ -1054,7 +1148,7 @@ Leading zeros are dropped, the rest is returned as is."
       #'el-reader//parse-decimal-digit)
      #'el-reader//parse-decimal-point
      (el-reader//parse-plus #'el-reader//parse-decimal-digit)
-     (el-reader//parse-optional *el-reader//parse-exponent*))
+     (el-reader//parse-optional #'el-reader//parse-exponent))
     (el-reader//parse-seq
      (el-reader//parse-optional #'el-reader//parse-sign)
      (el-reader//parse-plus #'el-reader//parse-decimal-digit)
@@ -1063,23 +1157,142 @@ Leading zeros are dropped, the rest is returned as is."
        #'el-reader//parse-decimal-point
        (el-reader//parse-kleene-star
         #'el-reader//parse-decimal-digit)))
-     *el-reader//parse-exponent*))))
+     #'el-reader//parse-exponent))))
 
-(defun el-reader//parse-float (token pos)
+;; (defvar *el-reader//pf/integer*
+;;   (el-reader//parse-alt
+;;    (el-reader//parse-seq
+;;     (el-reader//parse-optional #'el-reader//parse-sign)
+;;     (el-reader//parse-plus #'el-reader//parse-decimal-digit)
+;;     #'el-reader//parse-decimal-point)
+;;    (el-reader//parse-seq
+;;     (el-reader//parse-optional #'el-reader//parse-sign)
+;;     (el-reader//parse-plus #'el-reader//parse-digit))))
+
+(defvar *el-reader//pf/parse-exponent*
+  (el-reader//parse-seq
+   #'el-reader//parse-exponent-marker
+   (el-reader//parse-optional #'el-reader//parse-sign)
+   (el-reader//parse-plus #'el-reader//parse-digit)))
+
+(defun el-reader//pf/sign-fn (sign)
+  (pcase sign
+    ((and (pred el-reader//sign-p)
+          (guard (eq (slot-value sign 'value) 'minus-sign)))
+     #'-)
+    (_ #'identity)))
+
+(defun el-reader//parse-exponent (token pos)
+  (let ((res (funcall *el-reader//pf/parse-exponent* token pos)))
+    (when (slot-value res 'success)
+      (setf (slot-value res 'result)
+            (make-instance
+             'el-reader//exponent
+             :value
+             (pcase (slot-value res 'result)
+               (`(,_ ,sign ,digits)
+                (funcall (el-reader//pf/sign-fn sign)
+                         (el-reader//digit-list->int
+                          (el-reader//drop-leading-zeros digits))))))))
+    res))
+
+(defvar *el-reader//pf/parse-inf-marker*
+  (el-reader//parse-seq
+   (el-reader//parse-single-char ?+)
+   (el-reader//parse-single-char ?I)
+   (el-reader//parse-single-char ?N)
+   (el-reader//parse-single-char ?F)))
+
+(defun el-reader//parse-inf-marker (token pos)
+  (let ((res (funcall *el-reader//pf/parse-inf-marker* token pos)))
+    (when (slot-value res 'success)
+      (setf (slot-value res 'result)
+            (make-instance
+             'el-reader//inf-marker
+             :value 'inf)))
+    res))
+
+(defvar *el-reader//pf/parse-nan-marker*
+  (el-reader//parse-seq
+   (el-reader//parse-single-char ?+)
+   (el-reader//parse-single-char ?N)
+   (el-reader//parse-single-char ?a)
+   (el-reader//parse-single-char ?N)))
+
+(defun el-reader//parse-nan-marker (token pos)
+  (let ((res (funcall *el-reader//pf/parse-nan-marker* token pos)))
+    (when (slot-value res 'success)
+      (setf (slot-value res 'result)
+            (make-instance
+             'el-reader//nan-marker
+             :value 'nan)))
+    res))
+
+(defvar *el-reader//pf/parse-extension*
+  (el-reader//parse-alt
+   #'el-reader//parse-exponent
+   (el-reader//parse-seq
+    #'el-reader//parse-exponent-marker
+    (el-reader//parse-alt
+     #'el-reader//parse-inf-marker
+     #'el-reader//parse-nan-marker))))
+
+(defun el-reader//parse-extension (token pos)
+  (let* ((res (funcall *el-reader//pf/parse-extension* token pos))
+         (res-result (slot-value res 'result)))
+    (setf
+     (slot-value res 'result)
+     (pcase res-result
+       ((and ext
+             (pred el-reader//exponent-p))
+        res-result)
+       ((and `(,exp-marker ,inf-marker)
+             (guard (and (el-reader//exponent-marker-p exp-marker)
+                         (el-reader//inf-marker-p inf-marker)))
+             inf-marker))
+       ((and `(,exp-marker ,nan-marker)
+             (guard (and (el-reader//exponent-marker-p exp-marker)
+                         (el-reader//nan-marker-p nan-marker)))
+             nan-marker))))
+    res))
+
+;; (setf *el-reader//pf/parse-float*
+;;       (el-reader//ensure-complete-token
+;;        (el-)))
+
+;; (defun el-reader//parse-float-el (token pos)
+;;   (let* ((flt (funcall *el-reader//pf/parse-float* token pos)))
+;;     ;;; NB: “Left” refers to the grammar given here:
+;;     ;;; http://www.lispworks.com/documentation/lw70/CLHS/Body/02_ca.htm Left
+;;     ;;; mereley means that it is the first case, rather than the latter.  This
+;;     ;;; is why the extraction of elements of the parse tree is slightly
+;;     ;;; different for the two cases.
+;;     (if (slot-value flt 'success)
+;;         (clone
+;;          flt
+;;          :result
+;;          (make-instance
+;;           'el-reader//syntax-element
+;;           :value (el-reader//pf/fe (slot-value flt 'result))))
+;;       flt)))
+
+(defun el-reader//parse-float-el (token pos)
   (let* ((flt (funcall *el-reader//pf/parse-float* token pos)))
     ;;; NB: “Left” refers to the grammar given here:
     ;;; http://www.lispworks.com/documentation/lw70/CLHS/Body/02_ca.htm Left
     ;;; mereley means that it is the first case, rather than the latter.  This
     ;;; is why the extraction of elements of the parse tree is slightly
     ;;; different for the two cases.
-    (if (slot-value flt 'success)
-        (clone
-         flt
-         :result
-         (make-instance
-          'el-reader//syntax-element
-          :value (el-reader//pf/fe (slot-value flt 'result))))
-      flt)))
+    (when (slot-value flt 'success)
+      (setf
+       (slot-value flt 'result)
+       (make-instance
+        'el-reader//syntax-element
+        :value (el-reader//pf/fe (slot-value flt 'result)))))
+    flt))
+
+(defun el-reader//parse-float (token pos)
+  (el-reader//parse-float-el token pos))
 
 (defvar *el-reader//pi/parse-integer*
       (el-reader//ensure-complete-token
@@ -1091,6 +1304,29 @@ Leading zeros are dropped, the rest is returned as is."
         (el-reader//parse-seq
          (el-reader//parse-optional #'el-reader//parse-sign)
          (el-reader//parse-plus #'el-reader//parse-digit)))))
+
+;; (defun el-reader//parse-integer (token pos)
+;;   (let ((int (funcall *el-reader//pi/parse-integer* token pos)
+;;          ;; (funcall
+;;          ;;  (el-reader//ensure-complete-token
+;;          ;;   (el-reader//parse-alt
+;;          ;;    (el-reader//parse-seq
+;;          ;;     (el-reader//parse-optional #'el-reader//parse-sign)
+;;          ;;     (el-reader//parse-plus #'el-reader//parse-decimal-digit)
+;;          ;;     #'el-reader//parse-decimal-point)
+;;          ;;    (el-reader//parse-seq
+;;          ;;     (el-reader//parse-optional #'el-reader//parse-sign)
+;;          ;;     (el-reader//parse-plus #'el-reader//parse-digit))))
+;;          ;;  token pos)
+;;          ))
+;;     (if (slot-value int 'success)
+;;         (clone
+;;          int
+;;          :result
+;;          (make-instance
+;;           'el-reader//syntax-element
+;;           :value (el-reader//make-int (slot-value int 'result))))
+;;       int)))
 
 (defun el-reader//parse-integer (token pos)
   (let ((int (funcall *el-reader//pi/parse-integer* token pos)
@@ -1106,14 +1342,13 @@ Leading zeros are dropped, the rest is returned as is."
          ;;     (el-reader//parse-plus #'el-reader//parse-digit))))
          ;;  token pos)
          ))
-    (if (slot-value int 'success)
-        (clone
-         int
-         :result
-         (make-instance
-          'el-reader//syntax-element
-          :value (el-reader//make-int (slot-value int 'result))))
-      int)))
+    (when (slot-value int 'success)
+      (setf
+       (slot-value int 'result)
+       (make-instance
+        'el-reader//syntax-element
+        :value (el-reader//make-int (slot-value int 'result)))))
+    int))
 
 (defvar *el-reader//parse-numeric-token*
       (el-reader//parse-alt #'el-reader//parse-integer
@@ -1188,6 +1423,7 @@ leaving the properties intact.  The result is a list of the results, in order."
      token))))
 
 (defun el-reader//process-token (token)
+  ;; (setf *el-reader//debug-stuff* (el-reader//parse-extension token 0))
   (let ((num? (funcall *el-reader//parse-numeric-token* token 0)))
     (if (slot-value num? 'success)
         (slot-value (slot-value num? 'result) 'value)

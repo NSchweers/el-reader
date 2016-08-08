@@ -48,6 +48,14 @@ How many random numbers are read is taken from *erl-test/read-decimal-count*"
     (should (eq (car c) 'foo))
     (should (eq (cdr c) 'bar))))
 
+(ert-deftest elr-test/dotted-pair-with-list ()
+  "Reads a dotted pair with a list in tail position"
+  :tags '(read-symbol read-cons read-dot read-list)
+  (let* ((str "(a . (b c))")
+         (elr-dp (el-reader/read str))
+         (el-dp (read str)))
+    (should-not (seq-filter #'identity (seq-mapn (-compose #'null #'eq) elr-dp el-dp)))))
+
 (ert-deftest elr-test/empty-list ()
   "Reads the empty list"
   :tags '(read-list nil empty)
@@ -153,21 +161,38 @@ evaluated or not."
   (should (= (el-reader/read "-0.0")
              (read "-0.0"))))
 
-(ert-deftest elr-test/1.0-pos-inf ()
-  "Reads the canonical positive infinity."
-  (should (= (el-reader/read "1.0e+INF")
-             (read "1.0e+INF"))))
+(ert-deftest elr-test/lispy-defvar ()
+  "Reads a defvar from lispy.el which used to fail"
+  (let ((str "(defvar lispy-parens-preceding-syntax-alist
+  '((lisp-mode . (\"[#`',.@]+\" \"#[0-9]*\" \"#[.,Ss+-]\" \"#[0-9]+[=Aa]\"))
+    (emacs-lisp-mode . (\"[#`',@]+\" \"#s\" \"#[0-9]+=\"))
+    (clojure-mode . (\"[`'~@]+\" \"#\" \"#\\\\?@?\"))
+    (clojurescript-mode . (\"[`'~@]+\" \"#\" \"#\\\\?@?\"))
+    (clojurec-mode . (\"[`'~@]+\" \"#\" \"#\\\\?@?\"))
+    (t . (\"[`',@]+\")))
+  \"An alist of `major-mode' to a list of regexps.
+Each regexp describes valid syntax that can precede an opening paren in that
+major mode. These regexps are used to determine whether to insert a space for
+`lispy-parens'.\")"))
+    (should (tree-equal (read str)
+                        (el-reader/read str)
+                        :test #'equal))))
 
-(let ((inf ".1e+INF"))
-  (list (type-of (read inf))
-        (read inf)))
+;; (ert-deftest elr-test/1.0-pos-inf ()
+;;   "Reads the canonical positive infinity."
+;;   (should (= (el-reader/read "1.0e+INF")
+;;              (read "1.0e+INF"))))
 
-1.1e+INF
+;; (let ((inf ".1e+INF"))
+;;   (list (type-of (read inf))
+;;         (read inf)))
 
-(/ 0.0 0.0)
+;; 1.1e+INF
 
--1.0e+NaN
+;; (/ 0.0 0.0)
 
-(let ((inf "+1.0e+NaN"))
-  (list (type-of (read inf))
-        (read inf)))
+;; -1.0e+NaN
+
+;; (let ((inf "+1.0e+NaN"))
+;;   (list (type-of (read inf))
+;;         (read inf)))
