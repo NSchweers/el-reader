@@ -241,10 +241,10 @@ This is done by associating 1 with a dummy cons (cons nil nil),
 replacing #1# with said cons, and then replacing all dummy conses
 with the proper reference. ")
 
-  (defvar *el-reader//circular-read-functions* nil
-    "This is used internally by the reader macros for #n= and #n#.
+;;   (defvar *el-reader//circular-read-functions* nil
+;;     "This is used internally by the reader macros for #n= and #n#.
 
-Not part of any public interface.  Assume nothing about it.")
+;; Not part of any public interface.  Assume nothing about it.")
 
   (defvar *el-reader/repeat-read* (cons nil nil)
     "This is a marker object, which may be returned by a read macro function.
@@ -1381,7 +1381,7 @@ leaving the properties intact.  The result is a list of the results, in order."
       (if (and (string= name ".")
                (not (get-text-property pos 'escapedp token))
                (not *el-reader//allow-single-dot-symbol*))
-          (signal 'reader-error "invalid-read-syntax: \".\"")
+          (signal 'invalid-read-syntax "invalid-read-syntax: \".\"")
         (intern name)))))
 
 ;; TODO: possibly build in package support.  This would need a hook of some
@@ -1423,7 +1423,6 @@ leaving the properties intact.  The result is a list of the results, in order."
      token))))
 
 (defun el-reader//process-token (token)
-  ;; (setf *el-reader//debug-stuff* (el-reader//parse-extension token 0))
   (let ((num? (funcall *el-reader//parse-numeric-token* token 0)))
     (if (slot-value num? 'success)
         (slot-value (slot-value num? 'result) 'value)
@@ -1705,7 +1704,8 @@ leaving the properties intact.  The result is a list of the results, in order."
                      (cl-return-from el-reader/read eof-value))))))
          (when (not recursive-p)
            (setf *el-reader//read-objects* nil
-                 *el-reader//circular-read-functions* nil))
+                 ;; *el-reader//circular-read-functions* nil
+                 ))
          (cond ((el-reader//rt/invalid-syntax-type-p *el-reader/readtable* x)
                 (signal 'reader-error (list "Invalid char" x)))
                ((el-reader//rt/whitespacep *el-reader/readtable* x)
@@ -1744,16 +1744,24 @@ leaving the properties intact.  The result is a list of the results, in order."
                                               (el-reader//defaults-to-str-props x)
                                               x)))
                (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!"))))))
-    (if (plist-get keys :return-list)
-        res
-      (if res
-          (car res)
-        (let ((res))
-          (while (not res)
-            (setf res
-                  (el-reader/read input-stream eof-error-p eof-value recursive-p
-                                  '(:return-list t))))
-          (car res))))))
+    (let ((ret-val
+           (if (plist-get keys :return-list)
+               res
+             (if res
+                 (car res)
+               (let ((res))
+                 (while (not res)
+                   (setf res
+                         (el-reader/read
+                          input-stream
+                          eof-error-p
+                          eof-value
+                          recursive-p
+                          '(:return-list t))))
+                 (car res))))))
+      (if (not recursive-p)
+          (el-reader//replace-placeholders ret-val)
+        ret-val))))
 
 (cl-defun el-reader/read-preserving-whitespace (&optional input-stream
                                                           (eof-error-p t)
@@ -1766,20 +1774,39 @@ leaving the properties intact.  The result is a list of the results, in order."
 ;; Now that we have defined the mechanism, it is time to define our macros, so
 ;; we can read something other than symbols and numbers :)
 
+;; (defun el-reader//read-lisp-list (stream _char)
+;;   (cl-values
+;;    (let ((*el-reader//allow-single-dot-symbol* t))
+;;      (let ((l (el-reader/read-delimited-list ?\) stream t)))
+;;        (let ((l- (if (and (>= (seq-length l) 3)
+;;                           (eq (seq-elt l (- (length l) 2)) (intern ".")))
+;;                      (append (seq-subseq l 0 (- (seq-length l) 2))
+;;                              (seq-elt l (1- (seq-length l))))
+;;                    l)))
+;;          (if (not (cl-loop for s in l- if (eq s (intern ".")) collect s))
+;;              (prog1 l-
+;;                (unintern "." obarray))
+;;            (unintern "." obarray)
+;;            (signal 'reader-error "invalid-read-syntax: \".\"")))))))
+
 (defun el-reader//read-lisp-list (stream _char)
   (cl-values
    (let ((*el-reader//allow-single-dot-symbol* t))
-     (let ((l (el-reader/read-delimited-list ?\) stream t)))
-       (let ((l- (if (and (>= (seq-length l) 3)
-                          (eq (seq-elt l (- (length l) 2)) (intern ".")))
-                     (append (seq-subseq l 0 (- (seq-length l) 2))
+     (let ((l (el-reader/read-delimited-list ?\) stream t))
+           (dot (intern ".")))
+       (cond ((and (>= (seq-length l) 3)
+                   (eq (seq-elt l (- (seq-length l) 2)) dot)
+                   (= 1 (cl-loop for c = 0 for s in l if (eq s dot) count c)))
+              (append (seq-subseq l 0 (- (seq-length l) 2))
                              (seq-elt l (1- (seq-length l))))
-                   l)))
-         (if (not (cl-loop for s in l- if (eq s (intern ".")) collect s))
-             (prog1 l-
-               (unintern "." obarray))
-           (unintern "." obarray)
-           (signal 'reader-error "invalid-read-syntax: \".\"")))))))
+              ;; (let ((lr (nreverse l)))
+              ;;   (nreverse (cons (car lr) (cddr lr))))
+              )
+             ((not (zerop (cl-loop for c = 0 for s in l if (eq s dot) count c)))
+              (unintern "." obarray)
+              (signal 'reader-error "invalid-read-syntax: \".\""))
+             (t
+              l))))))
 
 (defun el-reader//read-comment (stream _char)
   (cl-do ((c (el-reader/peek-char stream)
@@ -1868,33 +1895,125 @@ leaving the properties intact.  The result is a list of the results, in order."
 
 (el-reader/set-dispatch-macro-character ?# ?' #'el-reader//read-function-quote)
 
+;; (defun el-reader//read-= (stream _char number)
+;; ;;; save a placeholder (these are all unique)
+;;   (warn
+;;    "%s"
+;;    "Ummmm ... this function seems to be a little weird, is it still called?")
+;;   (let ((placeholder (cons nil nil))) 
+;;     ;; (setf (gethash number *el-reader//read-objects*)
+;;     ;;       placeholder)
+;;     (push (cons number placeholder) *el-reader//read-objects*)
+;;     (let ((obj (el-reader/read stream t nil t)))
+;;       (push (lambda (r)
+;;               (el-reader//replace-placeholder r placeholder obj)
+;;               r)
+;;             *el-reader//circular-read-functions*)
+;;       obj)))
+
+(defun el-reader//deep-follow-replacement (obj)
+  (do ((repl (list (el-reader//get-placeholder-replacement obj))
+             (cons (el-reader//get-placeholder-replacement (car repl))
+                   repl)))
+      ((null (car repl)) (second repl))))
+
+(defun el-reader//replace-placeholders (obj)
+  "Walks OBJ, replaces all placeholders in the global placeholder list."
+  (cond ((consp obj)
+         (let ((repl (el-reader//deep-follow-replacement obj)))
+           (if repl
+               repl
+             (setf (car obj) (el-reader//replace-placeholders (car obj))
+                   (cdr obj) (el-reader//replace-placeholders (cdr obj)))
+             obj)))
+        ((and (arrayp obj)
+              (not (stringp obj)))
+         (dotimes (i (length obj))
+           (aset obj i (el-reader//replace-placeholders (aref obj i))))
+         obj)
+        ((hash-table-p obj)
+         (seq-do
+          (lambda (k)
+            (let ((v (gethash k obj)))
+              (remhash k obj)
+              (setf (gethash (el-reader//replace-placeholders k) obj)
+                    (el-reader//replace-placeholders v))))
+          (hash-table-keys obj))
+         obj)
+        ((atom obj) obj
+         ;; (let ((repl (el-reader//deep-follow-replacement obj)))
+         ;;   (if (null repl)
+         ;;       obj
+         ;;     repl))
+         )))
+
+(defun el-reader//num->placeholder (n)
+  (cl-loop for triple in *el-reader//read-objects*
+           if (= (seq-elt triple 0) n) return (seq-elt triple 1)))
+
+(defun el-reader//potential-placeholder-p (obj)
+  (and (consp obj)
+       (null (car obj))
+       (null (cdr obj))))
+
+(defun el-reader//get-placeholder-replacement (placeholder)
+  "Returns the object which shall replace PLACEHOLDER, or nil."
+  (cl-loop for triple in *el-reader//read-objects*
+           if (eq (seq-elt triple 1) placeholder) return (seq-elt triple 2)))
+
+(defun el-reader//set-placeholder (placeholder obj)
+  (seq-map (lambda (triple)
+             (when (eq (seq-elt triple 1) placeholder)
+               (setf (seq-elt triple 2) obj))
+             triple)
+           *el-reader//read-objects*))
+
 (defun el-reader//read-= (stream _char number)
 ;;; save a placeholder (these are all unique)
-  (warn
-   "%s"
-   "Ummmm ... this function seems to be a little weird, is it still called?")
-  (let ((placeholder (cons nil nil))) 
-    ;; (setf (gethash number *el-reader//read-objects*)
-    ;;       placeholder)
-    (push (cons number placeholder) *el-reader//read-objects*)
+  (let ((placeholder (cons nil nil)))
+    (setf *el-reader//debug-stuff* placeholder)
+    ;; push a triple of the NUMBER, the PLACEHOLDER object and nil onto the
+    ;; global list.  NIL shall later be replaced by the object which shall
+    ;; replace PLACEHOLDER.
+    (push (vector number placeholder nil) *el-reader//read-objects*)
     (let ((obj (el-reader/read stream t nil t)))
-      (push (lambda (r)
-              (el-reader//replace-placeholder r placeholder obj)
-              r)
-            *el-reader//circular-read-functions*)
-      obj)))
+      (el-reader//set-placeholder placeholder obj)
+      (cl-values obj)
+      ;; (el-reader//replace-placeholders obj)
+      )))
 
 (el-reader/set-dispatch-macro-character ?# ?= #'el-reader//read-=)
 
+;; (defun el-reader//read-hash-num-hash (_stream _char number)
+;;    (if (not number)                     ; empty symbol
+;;        (intern "")
+;;      (let ((placeholder (assq number *el-reader//read-objects*)))
+;;        (if (not (consp placeholder))
+;;            (error "Invalid read syntax: \"%c\"" ?#)
+;;          (cdr placeholder)))))
+
+;; (defun el-reader//read-hash-num-hash (_stream _char number)
+;;   (if (not number)
+;;       (intern "")                       ; empty symbol
+;;     (let ((placeholder (assq number *el-reader//read-objects*)))
+;;       (if (not (consp placeholder))
+;;           (signal 'invalid-read-syntax (format "#%s#" number))
+;;         (cdr placeholder)))))
+
 (defun el-reader//read-hash-num-hash (_stream _char number)
-   (if (not number)                     ; empty symbol
-       (intern "")
-     (let ((placeholder (assq number *el-reader//read-objects*)))
-       (if (not (consp placeholder))
-           (error "Invalid read syntax: \"%c\"" ?#)
-         (cdr placeholder)))))
+  (if (not number)
+      (intern "")                       ; empty symbol
+    (let ((placeholder (el-reader//num->placeholder number)))
+      (if (not (el-reader//potential-placeholder-p placeholder))
+          (signal 'invalid-read-syntax (format "#%s#" number))
+        (cl-values placeholder)))))
 
 (el-reader/set-dispatch-macro-character ?# ?# #'el-reader//read-hash-num-hash)
+
+(defun el-reader//read-hash< (_stread _char _number)
+  (signal 'invalid-read-syntax "Invalid read syntax #"))
+
+(el-reader/set-dispatch-macro-character ?# ?< #'el-reader//read-hash<)
 
 (defun el-reader//read-char-table (_stream _char _number)
   ;; Syntax:
@@ -1912,18 +2031,18 @@ leaving the properties intact.  The result is a list of the results, in order."
 
 (el-reader/set-dispatch-macro-character ?# ?\[ #'el-reader//read-byte-code)
 
-(define-advice el-reader/read
-    (:after (&optional _input-stream _eof-error-p _eof-value recursive-p
-                       &rest _ignore)
-            nil
-            -100)
-  (when (not recursive-p)
-    ;; (dolist (f *el-reader//circular-read-advice*)
-    ;;   (funcall f))
-    (setf *el-reader//circular-read-functions* nil)))
+;; (define-advice el-reader/read
+;;     (:after (&optional _input-stream _eof-error-p _eof-value recursive-p
+;;                        &rest _ignore)
+;;             nil
+;;             -100)
+;;   (when (not recursive-p)
+;;     ;; (dolist (f *el-reader//circular-read-advice*)
+;;     ;;   (funcall f))
+;;     (setf *el-reader//circular-read-functions* nil)))
 
-(define-advice el-reader/read (:filter-return (r))
-  (funcall (apply #'-compose *el-reader//circular-read-functions*) r))
+;; (define-advice el-reader/read (:filter-return (r))
+;;   (funcall (apply #'-compose *el-reader//circular-read-functions*) r))
 
 (define-advice read (:around (oldfun &optional stream) el-reader//replace-read)
   ;; Don’t use this if we’re reading bytecode.  Emacs elegantly uses its reader
