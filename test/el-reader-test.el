@@ -340,10 +340,22 @@ major mode. These regexps are used to determine whether to insert a space for
   "Reads a dot, which is invalid."
   (should-error (el-reader/read ".") :type 'invalid-read-syntax))
 
-;; (ert-deftest elr-test/1.0-pos-inf ()
-;;   "Reads the canonical positive infinity."
-;;   (should (= (el-reader/read "1.0e+INF")
-;;              (read "1.0e+INF"))))
+(ert-deftest elr-test/1.0-pos-inf ()
+  "Reads the canonical positive infinity."
+  (should (= (el-reader/read "1.0e+INF")
+             (read "1.0e+INF"))))
+
+(ert-deftest elr-test/1.0-neg-inf ()
+  "Reads the canonical negative infinity."
+  (should (= (el-reader/read "-1.0e+INF")
+             (read "-1.0e+INF"))))
+
+(ert-deftest elr-test/1.0-nan ()
+  "Reads NaN, both \"positive\" and \"negative\"."
+  (should (string= (with-output-to-string (el-reader/read "-1.0e+NaN"))
+                   (with-output-to-string (read "-0.0e+NaN"))))
+  (should (string= (with-output-to-string (el-reader/read "1.0e+NaN"))
+                   (with-output-to-string (read "0.0e+NaN")))))
 
 ;; (let ((inf ".1e+INF"))
 ;;   (list (type-of (read inf))

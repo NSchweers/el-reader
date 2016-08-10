@@ -1189,6 +1189,22 @@ Leading zeros are dropped, the rest is returned as is."
 
 (defun el-reader//parse-left-float (left)
   (pcase (slot-value left 'result)
+    ((and `(,sign ,digits ,point ,mantissa ,exponent)
+          (guard (el-reader//inf-marker-p exponent)))
+     (setf (slot-value left 'result)
+           (make-instance
+            'el-reader//float
+            :value (let ((sign-fn (el-reader//pf/sign-fn sign)))
+                     (funcall sign-fn 1.0e+INF))))
+     left)
+    ((and `(,sign ,digits ,point ,mantissa ,exponent)
+          (guard (el-reader//nan-marker-p exponent)))
+     (setf (slot-value left 'result)
+           (make-instance
+            'el-reader//float
+            :value (let ((sign-fn (el-reader//pf/sign-fn sign)))
+                     (funcall sign-fn 0.0e+NaN))))
+     left)
     (`(,sign ,digits ,point ,mantissa ,exponent)
      (let ((sign-fn (el-reader//pf/sign-fn sign))
            (int-part (el-reader//pf/get-int-part digits))
@@ -1208,6 +1224,21 @@ Leading zeros are dropped, the rest is returned as is."
     (`(,sign ,digits ,point ,mantissa ,exponent)
      ;; In this case, we can just treat it as if it was a "left float".
      (el-reader//parse-left-float right))
+    ((and `(,sign ,digits ,point-mantissa ,exponent)
+          (guard (el-reader//inf-marker-p exponent)))
+     (setf (slot-value right 'result)
+           (make-instance
+            'el-reader//float
+            :value (let ((sign-fn (el-reader//pf/sign-fn sign)))
+                     (funcall sign-fn 1.0e+INF))))
+     right)
+    ((and `(,sign ,digits ,point-mantissa ,exponent)
+          (guard (el-reader//nan-marker-p exponent)))
+     (setf (slot-value right 'result)
+           (make-instance
+            'el-reader//float
+            :value 0.0e+NaN))
+     right)
     (`(,sign ,digits ,point-mantissa ,exponent)
      (let ((sign-fn (el-reader//pf/sign-fn sign))
            (int-part (el-reader//pf/get-int-part digits))
