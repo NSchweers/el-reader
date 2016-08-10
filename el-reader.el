@@ -1929,6 +1929,8 @@ leaving the properties intact.  The result is a list of the results, in order."
 (defun el-reader//read-lone-close-paren (&rest _args)
   (signal 'unbalanced-sexp nil))
 
+(el-reader/make-dispatch-macro-character ?# nil)
+
 (el-reader/set-macro-character ?\) #'el-reader//read-lone-close-paren)
 
 ;; Make ] do the same thing as ), namely signal an error.
@@ -1969,12 +1971,24 @@ leaving the properties intact.  The result is a list of the results, in order."
 
 (defun el-reader//read-int-radix (stream _char radix)
    (let ((*el-reader/read-base* radix))
-     (let ((r (el-reader/read stream)))
+     (let ((r (el-reader/read stream t nil t)))
        (if (integerp r)
            (cl-values r)
          (error "invalid-read-syntax \"integer, radix %i\"" radix)))))
 
+(defun el-reader//read-binary (stream char _number)
+  (el-reader//read-int-radix stream char 2))
+
+(defun el-reader//read-octal (stream char _number)
+  (el-reader//read-int-radix stream char 8))
+
+(defun el-reader//read-hex (stream char _number)
+  (el-reader//read-int-radix stream char 16))
+
 (el-reader/set-dispatch-macro-character ?# ?r #'el-reader//read-int-radix)
+(el-reader/set-dispatch-macro-character ?# ?b #'el-reader//read-binary)
+(el-reader/set-dispatch-macro-character ?# ?o #'el-reader//read-octal)
+(el-reader/set-dispatch-macro-character ?# ?x #'el-reader//read-hex)
 
 (cl-multiple-value-bind (fun _term)
     (el-reader/get-macro-character ?\))
@@ -1990,8 +2004,6 @@ leaving the properties intact.  The result is a list of the results, in order."
 (el-reader/set-macro-character ?\{ #'el-reader//read-hash-table)
 ;; While # is a non-terminating char in CL, el has no such thing, so we won’t
 ;; make it non-terminating.
-
-(el-reader/make-dispatch-macro-character ?# nil)
 
 (defun el-reader//read-function-quote (stream _char _number)
    (cl-values `(function ,(el-reader/read stream t nil t))))

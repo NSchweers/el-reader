@@ -357,16 +357,21 @@ major mode. These regexps are used to determine whether to insert a space for
   (should (string= (with-output-to-string (el-reader/read "1.0e+NaN"))
                    (with-output-to-string (read "0.0e+NaN")))))
 
-;; (let ((inf ".1e+INF"))
-;;   (list (type-of (read inf))
-;;         (read inf)))
+(ert-deftest elr-test/binary-notation ()
+  "Reads some numbers in base 2."
+  (should (= (el-reader/read "#b10") 2)))
 
-;; 1.1e+INF
+(ert-deftest elr-test/octal-notation ()
+  "Reads some numbers in base 8."
+  (should (= (el-reader/read "#o77") #o77)))
 
-;; (/ 0.0 0.0)
+(ert-deftest elr-test/hex-notation ()
+  "Reads some numbers in base 16."
+  (should (= (el-reader/read "#xFF") 255)))
 
-;; -1.0e+NaN
-
-;; (let ((inf "+1.0e+NaN"))
-;;   (list (type-of (read inf))
-;;         (read inf)))
+(ert-deftest elr-test/any-radix ()
+  "Reads some numbers in unusual bases."
+  (should (= (el-reader/read "#3r01201") #3r01201))
+  (should (= (el-reader/read "#4r01201") #4r01201))
+  (should (= (el-reader/read "#5r01201") #5r01201))
+  (should (= (el-reader/read "#6r01201") #6r01201)))
