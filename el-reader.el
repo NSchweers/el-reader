@@ -7,7 +7,7 @@
 ;; Keywords: reader
 ;; Homepage: https://github.com/NSchweers/el-reader
 ;; Package-Version: 0.0.1
-;; Package-Requires: ((seq "1.7") (dash "20151021.113") (dash-functional "20150828.413") (emacs "25.0"))
+;; Package-Requires: ((seq "1.7") (dash "20151021.113") (dash-functional "20150828.413") (s "20160711.525")(emacs "25.0"))
 
 ;; This file is not part of GNU Emacs
 
@@ -49,6 +49,7 @@
 (require 'dash-functional)
 ;; (require 'hash-utils)
 (require 'seq)
+(require 's)
 
 (eval-when-compile (require 'cl))
 
@@ -396,6 +397,22 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
   (make-instance 'el-reader//result :success success :token token :pos
                  pos :newpos newpos :result result))
 
+(defun el-reader//mutate-result (result &rest keys-values)
+  ;; (do* ((rest (seq-drop keys-values 2) (seq-drop rest 2))
+  ;;       (key (car keys-values) (car rest))
+  ;;       (value (cadr keys-values) (cadr rest)))
+  ;;     ((or (null rest) (null (cdr rest)))
+  ;;      result)
+  ;;   (setf (slot-value result key) value))
+
+  (let ((rest keys-values))
+    (do ((key (car rest) (car rest))
+         (value (cadr rest) (cadr rest)))
+        ((or (null rest) (null (cdr rest)))
+         result)
+      (setf (slot-value result key) value)
+      (setf rest (cddr rest)))))
+
 (defun el-reader//make-failed (token pos)
   (make-instance 'el-reader//result :token token :pos pos :newpos nil
                  :result nil))
@@ -665,9 +682,13 @@ syntax-type invalid."
                                      (tmp-result result))
                             tmp
                           (if tmp-success
-                              (el-reader//make-result
-                               t token pos tmp-newpos
+                              (el-reader//mutate-result
+                               a 'newpos tmp-newpos
+                               'result
                                (cons tmp-result a-result))
+                              ;; (el-reader//make-result
+                              ;;  t token pos tmp-newpos
+                              ;;  (cons tmp-result a-result))
                             (el-reader//make-failed token pos)))))
                   (el-reader//make-failed token pos)))
               (cdr fns)
@@ -740,21 +761,36 @@ syntax-type invalid."
 ;;                                     nil)
 ;;           (helper (clone res :result (list (slot-value res 'result)))))))))
 
+;; (defun el-reader//parse-kleene-star (fn)
+;;   (lambda (token pos)
+;;     (do* ((res
+;;            (el-reader//make-result t token pos pos nil)
+;;            (el-reader//make-result t token (slot-value res 'pos)
+;;                                    (slot-value tmp 'newpos)
+;;                                    (cons (slot-value tmp 'result)
+;;                                          (slot-value res 'result))))
+;;           (tmp (funcall fn token (slot-value res 'newpos))
+;;                (funcall fn token (slot-value tmp 'newpos))))
+;;         ((not (slot-value tmp 'success))
+;;          (progn
+;;            (setf (slot-value res 'result)
+;;                  (nreverse (slot-value res 'result)))
+;;            res)))))
+
 (defun el-reader//parse-kleene-star (fn)
   (lambda (token pos)
     (do* ((res
-           (el-reader//make-result t token pos pos nil)
-           (el-reader//make-result t token (slot-value res 'pos)
-                                   (slot-value tmp 'newpos)
-                                   (cons (slot-value tmp 'result)
-                                         (slot-value res 'result))))
-          (tmp (funcall fn token (slot-value res 'newpos))
-               (funcall fn token (slot-value tmp 'newpos))))
+           (el-reader//make-result t token pos pos nil))
+          (tmp (funcall fn token (slot-value res 'newpos))))
         ((not (slot-value tmp 'success))
          (progn
            (setf (slot-value res 'result)
                  (nreverse (slot-value res 'result)))
-           res)))))
+           res))
+      (el-reader//mutate-result res 'newpos (slot-value tmp 'newpos)
+                                'result (cons (slot-value tmp 'result)
+                                              (slot-value res 'result)))
+      (setf tmp (funcall fn token (slot-value tmp 'newpos))))))
 
 (defun el-reader//parse-plus (fn)
   (-compose
