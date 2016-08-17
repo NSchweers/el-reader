@@ -34,42 +34,11 @@
 ;; The reader algorithm is described here:
 ;; http://www.lispworks.com/documentation/lw70/CLHS/Body/02_b.htm
 
-;; (define-error 'precond/non-fix "The precondition was not fixed")
-
-;; (defmacro precond (conds &rest body)
-;;   "Ensure that preconditions are met before executing BODY.
-
-;; CONDS has the following form ([exp pred fix] ...) where EXP is an
-;; expression, which will by bound to `it' in the expansion, via a
-;; symbol-macro(!).  This makes it possible to say (setf it foo) in
-;; PRED and FIX.  PRED is evaluated once or twice—once to determine
-;; whether or not a fix is necessary, and a second time if a fix
-;; /is/ necessary.  Should the second evaluation fail, an error is
-;; raised.  If it is non-nil, nothing else happens.  If it evaluates
-;; to nil, FIX is evaluated once.  In both PRED and FIX, `it'
-;; expands to EXP, i.e. it is up to the user to make sure it is
-;; evaluated the right number of times."
-;;  (declare (indent defun))
-;;  `(progn
-;;      ,@(cl-loop for (exp pred fix) on conds by #'cdddr
-;;                collect
-;;                `(cl-symbol-macrolet ((it ,exp))
-;;                   (when (not ,pred)
-;;                     ,fix
-;;                     (when (not ,pred)
-;;                       (signal 'precond/non-fix (princ ',pred))))))
-;;      ,@body))
-
-;; (setf lexical-binding t)
-;;;Emacs (especially org-mode) is sometimes a little eratic when it comes to
-;;;variables defined with -*- syntax (see first line).  This is why `setf' is
-;;;used here.
+;; NOTE: put the following line at the start of any buffer which shall use
+;; el-reader (without the comment chars, of course).
 
 (eval-and-compile (make-variable-buffer-local 'use-el-reader)
                   (make-variable-buffer-local 'el-reader-bytecode))
-
-;; NOTE: put the following line at the start of any buffer which shall use
-;; el-reader (without the comment chars, of course).
 
 ;; (eval-and-compile (setf use-el-reader t))
 
@@ -1105,18 +1074,12 @@ Leading zeros are dropped, the rest is returned as is."
 ;; digit---a digit in the current input radix
 
 ;; Note: This is the modified grammar to accomodate ELisps float syntax:
-;; numeric-token  ::=  integer |
-;; 				   ratio   |
-;; 				   float       
+;; numeric-token  ::=  integer | float
 ;; integer        ::=  [sign]
 ;; 				   decimal-digit+
 ;; 				   decimal-point |
 ;; 				   [sign]
 ;; 				   digit+      
-;; ratio          ::=  [sign]
-;; 				   {digit}+
-;; 				   slash
-;; 				   {digit}+    
 ;; float          ::=  [sign]
 ;; 				   {decimal-digit}*
 ;; 				   decimal-point
@@ -1805,10 +1768,6 @@ leaving the properties intact.  The result is a list of the results, in order."
                    (if eof-error-p
                        (signal (car c) (cdr c))
                      (cl-return-from el-reader/read eof-value))))))
-         (when (not recursive-p)
-           (setf *el-reader//read-objects* nil
-                 ;; *el-reader//circular-read-functions* nil
-                 ))
          (cond ((el-reader//rt/invalid-syntax-type-p *el-reader/readtable* x)
                 (signal 'reader-error (list "Invalid char" x)))
                ((el-reader//rt/whitespacep *el-reader/readtable* x)
@@ -1863,7 +1822,8 @@ leaving the properties intact.  The result is a list of the results, in order."
                           '(:return-list t))))
                  (car res))))))
       (if (not recursive-p)
-          (el-reader//replace-placeholders ret-val)
+          (prog1 (el-reader//replace-placeholders ret-val)
+            (setf *el-reader//read-objects* nil))        
         ret-val))))
 
 (cl-defun el-reader/read-preserving-whitespace (&optional input-stream
@@ -1877,21 +1837,6 @@ leaving the properties intact.  The result is a list of the results, in order."
 ;; Now that we have defined the mechanism, it is time to define our macros, so
 ;; we can read something other than symbols and numbers :)
 
-;; (defun el-reader//read-lisp-list (stream _char)
-;;   (cl-values
-;;    (let ((*el-reader//allow-single-dot-symbol* t))
-;;      (let ((l (el-reader/read-delimited-list ?\) stream t)))
-;;        (let ((l- (if (and (>= (seq-length l) 3)
-;;                           (eq (seq-elt l (- (length l) 2)) (intern ".")))
-;;                      (append (seq-subseq l 0 (- (seq-length l) 2))
-;;                              (seq-elt l (1- (seq-length l))))
-;;                    l)))
-;;          (if (not (cl-loop for s in l- if (eq s (intern ".")) collect s))
-;;              (prog1 l-
-;;                (unintern "." obarray))
-;;            (unintern "." obarray)
-;;            (signal 'reader-error "invalid-read-syntax: \".\"")))))))
-
 (defun el-reader//read-lisp-list (stream _char)
   (cl-values
    (let ((*el-reader//allow-single-dot-symbol* t))
@@ -1901,15 +1846,11 @@ leaving the properties intact.  The result is a list of the results, in order."
                    (eq (seq-elt l (- (seq-length l) 2)) dot)
                    (= 1 (cl-loop for c = 0 for s in l if (eq s dot) count c)))
               (append (seq-subseq l 0 (- (seq-length l) 2))
-                             (seq-elt l (1- (seq-length l))))
-              ;; (let ((lr (nreverse l)))
-              ;;   (nreverse (cons (car lr) (cddr lr))))
-              )
+                      (seq-elt l (1- (seq-length l)))))
              ((not (zerop (cl-loop for c = 0 for s in l if (eq s dot) count c)))
               (unintern "." obarray)
               (signal 'reader-error "invalid-read-syntax: \".\""))
-             (t
-              l))))))
+             (t l))))))
 
 (defun el-reader//read-comment (stream _char)
   (cl-do ((c (el-reader/peek-char stream)

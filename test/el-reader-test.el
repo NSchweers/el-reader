@@ -188,6 +188,11 @@ major mode. These regexps are used to determine whether to insert a space for
            (co (el-reader/read str)))
       (should (eq co (second co))))))
 
+(ert-deftest elr-test/endless-list ()
+  "Reads an endless list using dotted pair notation."
+  (let ((l (el-reader/read "#1=(a b c . #1#)")))
+    (should (eq l (cdddr l)))))
+
 (ert-deftest elr-internal/replace-empty-placeholders ()
   "Tests placeholder replacement in the empty global list."
   ;; Make a new list, don’t disrupt normal operation.
