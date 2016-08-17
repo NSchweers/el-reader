@@ -385,8 +385,6 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
    (token :initarg :token :type string)
    (pos :initarg :pos :type (or integer marker))
    (newpos :initarg :newpos :type (or integer marker null)) ;or marker?
-   (result-string :initarg :result-string :type (or string null))
-   (rest :initarg :rest :type (or string null))
    (result :initarg :result)
    (metadata :initarg :metadata :initform nil))
   "A type for the result of a parse.")
@@ -394,15 +392,13 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
 (defun el-reader//result/success-p (r)
   (and (el-reader//result-p r) (slot-value r 'success)))
 
-(defun el-reader//make-result (success token pos newpos
-                                      result-string rest result)
+(defun el-reader//make-result (success token pos newpos result)
   (make-instance 'el-reader//result :success success :token token :pos
-                 pos :newpos newpos :result-string result-string :rest rest
-                 :result result))
+                 pos :newpos newpos :result result))
 
 (defun el-reader//make-failed (token pos)
   (make-instance 'el-reader//result :token token :pos pos :newpos nil
-                 :result-string nil :rest nil :result nil))
+                 :result nil))
 
 (defun el-reader//rt/constituentp (rt char)
   "Returns non-nil if CHAR is a constituent char.
@@ -612,8 +608,7 @@ syntax-type invalid."
   (lambda (token pos)
     (let ((res (funcall fn token pos)))
       (cond ((and (slot-value res 'success)
-                  (or (not (string-empty-p (slot-value res 'rest)))
-                      (< (slot-value res 'newpos) (length token))))
+                  (< (slot-value res 'newpos) (length token)))
              (el-reader//make-failed token pos))
             (t res)))))
 
@@ -667,16 +662,11 @@ syntax-type invalid."
                                           a-newpos)))
                         (with-slots ((tmp-success success)
                                      (tmp-newpos newpos)
-                                     (tmp-rest rest)
                                      (tmp-result result))
                             tmp
                           (if tmp-success
                               (el-reader//make-result
                                t token pos tmp-newpos
-                               (substring a-token
-                                          a-pos
-                                          tmp-newpos)
-                               tmp-rest
                                (cons tmp-result a-result))
                             (el-reader//make-failed token pos)))))
                   (el-reader//make-failed token pos)))
@@ -724,8 +714,7 @@ syntax-type invalid."
           (progn
             (push (list :type :optional :present t) (slot-value r 'metadata))
             r)
-        (let ((r- (el-reader//make-result t token pos pos "" (substring token pos)
-                                          nil)))
+        (let ((r- (el-reader//make-result t token pos pos nil)))
           (push (list :type :optional :present nil) (slot-value r- 'metadata))
           r-)))))
 
@@ -754,14 +743,9 @@ syntax-type invalid."
 (defun el-reader//parse-kleene-star (fn)
   (lambda (token pos)
     (do* ((res
-           (el-reader//make-result t token pos pos ""
-                                   (substring token pos) nil)
+           (el-reader//make-result t token pos pos nil)
            (el-reader//make-result t token (slot-value res 'pos)
                                    (slot-value tmp 'newpos)
-                                   (substring token (slot-value res 'pos)
-                                              (slot-value tmp 'newpos))
-                                   (substring token
-                                              (slot-value tmp 'newpos))
                                    (cons (slot-value tmp 'result)
                                          (slot-value res 'result))))
           (tmp (funcall fn token (slot-value res 'newpos))
@@ -785,8 +769,6 @@ syntax-type invalid."
   (lambda (token pos)
     (if (= c (string-to-char (substring token pos)))
         (el-reader//make-result t token pos (1+ pos)
-                                (substring token pos (1+ pos))
-                                (substring token (1+ pos))
                                 (make-instance 'el-reader//char :value c))
       (el-reader//make-failed token pos))))
 
@@ -794,8 +776,6 @@ syntax-type invalid."
   (lambda (token pos)
     (if (= (downcase c) (downcase (string-to-char (substring token pos))))
         (el-reader//make-result t token pos (1+ pos)
-                                (substring token pos (1+ pos))
-                                (substring token (1+ pos))
                                 (make-instance 'el-reader//char
                                                :value (downcase c)))
       (el-reader//make-failed token pos))))
@@ -811,10 +791,8 @@ syntax-type invalid."
           (if (not (= (length r) 1))
               (error "Ambiguous exponent sign")
             (el-reader//make-result t token pos (1+ pos)
-                                (substring token pos (1+ pos))
-                                (substring token pos)
-                                (make-instance 'el-reader//exponent-marker
-                                               :value (car r))))
+                                    (make-instance 'el-reader//exponent-marker
+                                                   :value (car r))))
         (el-reader//make-failed token pos))
     (el-reader//make-failed token pos)))
 
@@ -823,8 +801,6 @@ syntax-type invalid."
            (cl-member 'plus-sign (get-text-property pos 'traits token)))
       (el-reader//make-result
        t token pos (1+ pos)
-       (substring token pos (1+ pos))
-       (substring token (1+ pos))
        (make-instance 'el-reader//sign :value 'plus-sign))
     (el-reader//make-failed token pos)))
 
@@ -839,8 +815,6 @@ syntax-type invalid."
           (if (not (= (length r) 1))
               (error "Ambiguous sign character")
             (el-reader//make-result t token pos (1+ pos)
-                                (substring token pos (1+ pos))
-                                (substring token (1+ pos))
                                 (make-instance 'el-reader//sign
                                                :value (car r))))
         (el-reader//make-failed token pos))
@@ -851,8 +825,6 @@ syntax-type invalid."
           (cl-member 'decimal-point (get-text-property pos 'traits token)))
       (el-reader//make-result
        t token pos (1+ pos)
-       (substring token pos (1+ pos))
-       (substring token (1+ pos))
        (make-instance 'el-reader//decimal-point
                       :value (substring token pos (1+ pos))))
     (el-reader//make-failed token pos)))
@@ -867,8 +839,6 @@ syntax-type invalid."
                        (el-reader//rt/char-to-num *el-reader/readtable*))
               *el-reader/read-base*))
       (el-reader//make-result t token pos (1+ pos)
-                              (substring token pos (1+ pos))
-                              (substring token (1+ pos))
                               (make-instance
                                'el-reader//digit
                                :value (gethash
@@ -1152,7 +1122,7 @@ Leading zeros are dropped, the rest is returned as is."
 
 (defun el-reader//parse-left-float (left)
   (pcase (slot-value left 'result)
-    ((and `(,sign ,digits ,point ,mantissa ,exponent)
+    ((and `(,sign ,_digits ,_point ,_mantissa ,exponent)
           (guard (el-reader//inf-marker-p exponent)))
      (setf (slot-value left 'result)
            (make-instance
@@ -1160,7 +1130,7 @@ Leading zeros are dropped, the rest is returned as is."
             :value (let ((sign-fn (el-reader//pf/sign-fn sign)))
                      (funcall sign-fn 1.0e+INF))))
      left)
-    ((and `(,sign ,digits ,point ,mantissa ,exponent)
+    ((and `(,sign ,_digits ,_point ,_mantissa ,exponent)
           (guard (el-reader//nan-marker-p exponent)))
      (setf (slot-value left 'result)
            (make-instance
@@ -1168,26 +1138,26 @@ Leading zeros are dropped, the rest is returned as is."
             :value (let ((sign-fn (el-reader//pf/sign-fn sign)))
                      (funcall sign-fn 0.0e+NaN))))
      left)
-    (`(,sign ,digits ,point ,mantissa ,exponent)
+    (`(,sign ,digits ,_point ,mantissa ,exponent)
      (let ((sign-fn (el-reader//pf/sign-fn sign))
            (int-part (el-reader//pf/get-int-part digits))
-           (point point)
+           ;; (point point)
            (mantissa (el-reader//pf/get-post-dec-places mantissa))
-           (exponent (if exponent (slot-value exponent 'value) 0)))
+           (exp (if exponent (slot-value exponent 'value) 0)))
        (setf (slot-value left 'result)
              (make-instance
               'el-reader//float
               :value (funcall sign-fn
                               (* (+ int-part mantissa)
-                                 (expt 10 exponent)))))
+                                 (expt 10 exp)))))
        left))))
 
 (defun el-reader//parse-right-float (right)
   (pcase (slot-value right 'result)
-    (`(,sign ,digits ,point ,mantissa ,exponent)
+    (`(,_sign ,_digits ,_point ,_mantissa ,_exponent)
      ;; In this case, we can just treat it as if it was a "left float".
      (el-reader//parse-left-float right))
-    ((and `(,sign ,digits ,point-mantissa ,exponent)
+    ((and `(,_sign ,_digits ,_point-mantissa ,exponent)
           (guard (el-reader//inf-marker-p exponent)))
      (setf (slot-value right 'result)
            (make-instance
@@ -1195,21 +1165,21 @@ Leading zeros are dropped, the rest is returned as is."
             :value (let ((sign-fn (el-reader//pf/sign-fn sign)))
                      (funcall sign-fn 1.0e+INF))))
      right)
-    ((and `(,sign ,digits ,point-mantissa ,exponent)
+    ((and `(,_sign ,_digits ,_point-mantissa ,exponent)
           (guard (el-reader//nan-marker-p exponent)))
      (setf (slot-value right 'result)
            (make-instance
             'el-reader//float
             :value 0.0e+NaN))
      right)
-    (`(,sign ,digits ,point-mantissa ,exponent)
+    (`(,sign ,digits ,_point-mantissa ,exponent)
      (let ((sign-fn (el-reader//pf/sign-fn sign))
            (int-part (el-reader//pf/get-int-part digits))
            (exponent (if exponent (slot-value exponent 'value) 0)))
        (setf (slot-value right 'result)
              (make-instance
               'el-reader//float
-              :value (fancall sign-fn
+              :value (funcall sign-fn
                               (* int-part
                                  (expt 10 exponent)))))
        right))))
@@ -1308,7 +1278,7 @@ Leading zeros are dropped, the rest is returned as is."
     (setf
      (slot-value res 'result)
      (pcase res-result
-       ((and ext
+       ((and `(_)
              (pred el-reader//exponent-p))
         res-result)
        ((and `(,exp-marker ,inf-marker)
