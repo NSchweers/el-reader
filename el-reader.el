@@ -1137,7 +1137,7 @@ Leading zeros are dropped, the rest is returned as is."
               'el-reader//float
               :value (funcall sign-fn
                               (* int-part
-                                 (expt 10 exponent)))))
+                                 (float (expt 10 exponent))))))
        right))))
 
 (defun el-reader//parse-float (token pos)
@@ -1235,7 +1235,7 @@ Leading zeros are dropped, the rest is returned as is."
     (setf
      (slot-value res 'result)
      (pcase res-result
-       ((and `(_)
+       ((and _
              (pred el-reader//exponent-p))
         res-result)
        ((and `(,exp-marker ,inf-marker)

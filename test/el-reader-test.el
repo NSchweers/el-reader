@@ -161,6 +161,12 @@ evaluated or not."
   (should (= (el-reader/read "-0.0")
              (read "-0.0"))))
 
+(ert-deftest erl-test/float-with-exp ()
+  "Reads a float with a given exponent."
+  (let ((fstring "1e2"))
+    (should (= (read fstring) (el-reader/read fstring)))
+    (should (eq (type-of (read fstring)) (type-of (el-reader/read fstring))))))
+
 (ert-deftest elr-test/lispy-defvar ()
   "Reads a defvar from lispy.el which used to fail"
   (let ((str "(defvar lispy-parens-preceding-syntax-alist
@@ -385,6 +391,13 @@ major mode. These regexps are used to determine whether to insert a space for
   "Reads the canonical negative infinity."
   (should (= (el-reader/read "-1.0e+INF")
              (read "-1.0e+INF"))))
+
+(ert-deftest elr/test/non-canon-inf ()
+  "Reads non-canonical infinities."
+  (should (= (el-reader/read "-5.0e+INF")
+             (read "-5.0e+INF")))
+  (should (= (el-reader/read "5.0e+INF")
+             (read "5.0e+INF"))))
 
 (ert-deftest elr-test/1.0-nan ()
   "Reads NaN, both \"positive\" and \"negative\"."
