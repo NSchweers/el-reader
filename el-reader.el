@@ -182,6 +182,17 @@ Keys and values are given alternating in args."
                             'long-float-exponent-marker '(?l ?L)
                             'short-float-exponent-marker '(?s ?S))))
 
+  (defun el-reader/copy-readtable (&optional from-readtable to-readtable)
+    (let ((from-readtable (or from-readtable *el-reader/readtable*))
+          (to-readtable (or to-readtable (make-instance 'el-reader/readtable))))
+      (seq-do
+       (lambda (slot)
+         (setf (slot-value to-readtable slot)
+               (slot-value from-readtable slot)))
+       (seq-map #'eieio-slot-descriptor-name
+                (eieio-class-slots 'el-reader/readtable)))
+      to-readtable))
+
   (defvar *el-reader/readtable*
     (el-reader/make-default-elisp-readtable))
 
@@ -220,10 +231,16 @@ This is done in order to signal that the read process shall be repeated, thus
 forming a trampoline.  If Emacs had proper tail-call elimination, this would not
 have been necessary."))
 
+(defvar *el-reader//rt/hashtable-marker* (cons nil nil))
+
+;; (defun el-reader//memhash (key table)
+;;   (and (hash-table-p table)
+;;        (or (gethash key table)
+;;            (not (gethash key table t)))))
+
 (defun el-reader//memhash (key table)
-  (and (hash-table-p table)
-       (or (gethash key table)
-           (not (gethash key table t)))))
+  (let ((v (gethash key table *el-reader//rt/hashtable-marker*)))
+    (not (eq v *el-reader//rt/hashtable-marker*))))
 
 (cl-defmacro el-reader//removable-advice
     ((where place &optional remover props) args &body body)
@@ -358,7 +375,7 @@ cannot dispatch on functions.  Otherwise, OBJ is returned as is."
 
 ;; get-macro-character char &optional readtable => function, non-terminating-p
 (cl-defun el-reader/get-macro-character (char &optional
-                                           (readtable *el-reader/readtable*))
+                                              (readtable *el-reader/readtable*))
   (--if-let (gethash char (el-reader//rt/term-mac-fns readtable))
       (list it nil)
     (list (gethash char (el-reader//rt/non-term-mac-fns readtable)) t)))
@@ -455,15 +472,21 @@ syntax-type invalid."
 (defun el-reader//rt/whitespacep (rt char)
   (not (null (member char (el-reader//rt/whitespace-chars rt)))))
 
+;; (defun el-reader//rt/terminating-macro-char-p (rt char)
+;;   (not (null (member char (cl-loop for k being the hash-keys in
+;;                                    (slot-value rt 'term-mac-fns)
+;;                                    collect k)))))
+
 (defun el-reader//rt/terminating-macro-char-p (rt char)
-  (not (null (member char (cl-loop for k being the hash-keys in
-                                   (slot-value rt 'term-mac-fns)
-                                   collect k)))))
+  (el-reader//memhash char (slot-value rt 'term-mac-fns)))
+
+;; (defun el-reader//rt/non-terminating-macro-char-p (rt char)
+;;   (not (null (member char (cl-loop for k being the hash-keys in
+;;                                    (slot-value rt 'non-term-mac-fns)
+;;                                    collect k)))))
 
 (defun el-reader//rt/non-terminating-macro-char-p (rt char)
-  (not (null (member char (cl-loop for k being the hash-keys in
-                                   (slot-value rt 'non-term-mac-fns)
-                                   collect k)))))
+  (el-reader//memhash char (slot-value rt 'non-term-mac-fns)))
 
 (defun el-reader//rt/single-escape-char-p (rt char)
   (not (null (member char (el-reader//rt/single-escape-chars rt)))))
@@ -559,7 +582,8 @@ syntax-type invalid."
          multiple-escape-char))
       (put-text-property
        0 1 'traits
-       (cl-loop for k being the hash-keys in (el-reader//rt/traits *el-reader/readtable*)
+       (cl-loop for k being the hash-keys in (el-reader//rt/traits
+                                              *el-reader/readtable*)
                 if (cl-member char (gethash k (el-reader//rt/traits
                                                *el-reader/readtable*)))
                 collect k)
@@ -1409,10 +1433,10 @@ leaving the properties intact.  The result is a list of the results, in order."
 ;; This function is not used by default.  It may be used to set arbitrary chains
 ;; of macro chars, not just 2 (char and sub-char).
 
-(defun el-reader/set-dispatch-macro-function (disp-fun sub-char new-function
-                                                        &optional
-                                                        non-terminating-p)
-  (funcall disp-fun nil nil :set sub-char new-function non-terminating-p))
+;; (defun el-reader/set-dispatch-macro-function (disp-fun sub-char new-function
+;;                                                         &optional
+;;                                                         non-terminating-p)
+;;   (funcall disp-fun nil nil :set sub-char new-function non-terminating-p))
 
 (defun el-reader//read-decimal (stream)
   (cl-flet ((between (x a b) (if (and (>= x a) (<= x b))
@@ -1422,9 +1446,21 @@ leaving the properties intact.  The result is a list of the results, in order."
         (res nil (if (between c ?0 ?9) (+ (* (or res 0) 10) (- c ?0)) res)))
        ((not (between c ?0 ?9)) (el-reader/getch stream c) res))))
 
+(defun el-reader//dispatch-on-hash (readtable stream char)
+  (let* ((n (el-reader//read-decimal stream))
+         (c (el-reader/getch stream))
+         (f (gethash
+             c
+             (gethash
+              char
+              (el-reader//rt/classic-dispatch-functions readtable)
+              (make-hash-table)))))
+    (condition-case nil (funcall f stream c n)
+      (t (error "Invalid read syntax: \"%c\"" char)))))
+
 (cl-defun el-reader/make-dispatch-macro-character
     (char &optional non-terminating-p (readtable *el-reader/readtable*))
-  (when (and (el-reader//memhash
+  (unless (and (el-reader//memhash
               char
               (el-reader//rt/classic-dispatch-functions readtable))
              (hash-table-p
@@ -1432,20 +1468,9 @@ leaving the properties intact.  The result is a list of the results, in order."
                        (el-reader//rt/classic-dispatch-functions readtable))))
     (setf (gethash char (el-reader//rt/classic-dispatch-functions readtable))
           (make-hash-table)))
-  
   (el-reader/set-macro-character
    char
-  (lambda (stream char)
-     (let* ((n (el-reader//read-decimal stream))
-            (c (el-reader/getch stream))
-            (f (gethash
-                c
-                (gethash
-                 char
-                 (el-reader//rt/classic-dispatch-functions readtable)
-                 (make-hash-table)))))
-       (condition-case nil (funcall f stream c n)
-         (t (error "Invalid read syntax: \"%c\"" char)))))
+   (-partial #'el-reader//dispatch-on-hash readtable)
    non-terminating-p readtable))
 
 (cl-defun el-reader/get-dispatch-macro-character
@@ -1458,9 +1483,9 @@ leaving the properties intact.  The result is a list of the results, in order."
 
 (cl-defun el-reader/set-dispatch-macro-character
     (disp-char sub-char new-function &optional (readtable *el-reader/readtable*))
-  (when (not (hash-table-p
-              (gethash disp-char
-                       (el-reader//rt/classic-dispatch-functions readtable))))
+  (unless (hash-table-p
+           (gethash disp-char
+                    (el-reader//rt/classic-dispatch-functions readtable)))
     (setf (gethash disp-char
                    (el-reader//rt/classic-dispatch-functions readtable))
           (make-hash-table)))
@@ -1676,6 +1701,9 @@ leaving the properties intact.  The result is a list of the results, in order."
 (defun el-reader//read-lone-close-paren (&rest _args)
   (signal 'unbalanced-sexp nil))
 
+;; While # is a non-terminating char in CL, el has no such thing, so we won’t
+;; make it non-terminating.
+
 (el-reader/make-dispatch-macro-character ?# nil)
 
 (el-reader/set-macro-character ?\) #'el-reader//read-lone-close-paren)
@@ -1749,8 +1777,6 @@ leaving the properties intact.  The result is a list of the results, in order."
         `(el-reader//ht ,@k-v)))))
 
 (el-reader/set-macro-character ?\{ #'el-reader//read-hash-table)
-;; While # is a non-terminating char in CL, el has no such thing, so we won’t
-;; make it non-terminating.
 
 (defun el-reader//read-function-quote (stream _char _number)
    (cl-values `(function ,(el-reader/read stream t nil t))))

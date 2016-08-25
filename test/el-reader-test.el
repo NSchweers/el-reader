@@ -424,3 +424,15 @@ major mode. These regexps are used to determine whether to insert a space for
   (should (= (el-reader/read "#4r01201") #4r01201))
   (should (= (el-reader/read "#5r01201") #5r01201))
   (should (= (el-reader/read "#6r01201") #6r01201)))
+
+;; (ert-deftest elr-test/copy-readtable ()
+;;   "Copies a few readtables with `el-reader/copy-readtable'."
+;;   (let ((new (make-instance 'el-reader/readtable))
+;;         (cop (el-reader/copy-readtable (make-instance 'el-reader/readtable))))
+;;     (-all? #'identity
+;;            (seq-map
+;;             (lambda (slot)
+;;               (equal (slot-value new slot)
+;;                      (slot-value cop slot)))
+;;             (seq-map #'eieio-slot-descriptor-name
+;;                      (eieio-class-slots 'el-reader/readtable))))))
