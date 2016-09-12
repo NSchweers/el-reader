@@ -202,23 +202,23 @@ major mode. These regexps are used to determine whether to insert a space for
 (ert-deftest elr-internal/replace-empty-placeholders ()
   "Tests placeholder replacement in the empty global list."
   ;; Make a new list, don’t disrupt normal operation.
-  (let ((*el-reader//read-objects* nil))
+  (let ((el-reader//*read-objects* nil))
     (el-reader//set-placeholder (cons nil nil) t)
-    (should (null *el-reader//read-objects*))))
+    (should (null el-reader//*read-objects*))))
 
 (ert-deftest elr-internal/set-placeholder-singleton ()
   "Tests setting the sole placeholder in the global list."
-  (let* ((*el-reader//read-objects* nil)
+  (let* ((el-reader//*read-objects* nil)
          (ph (cons nil nil)))
-    (push (vector 1 ph nil) *el-reader//read-objects*)
+    (push (vector 1 ph nil) el-reader//*read-objects*)
     (el-reader//set-placeholder ph 'replaced)
-    (should (= (seq-length *el-reader//read-objects*) 1))
-    (should (eq (seq-elt (seq-elt *el-reader//read-objects* 0) 2)
+    (should (= (seq-length el-reader//*read-objects*) 1))
+    (should (eq (seq-elt (seq-elt el-reader//*read-objects* 0) 2)
                 'replaced))))
 
 (ert-deftest elr-internal/test-replace-placeholders-on-atom ()
   "Tests `el-reader//replace-placeholders' on atoms."
-  (let ((*el-reader//read-objects* nil)
+  (let ((el-reader//*read-objects* nil)
         ;; (p1 (cons nil nil))
         )
     (should (null (el-reader//replace-placeholders nil)))
@@ -228,7 +228,7 @@ major mode. These regexps are used to determine whether to insert a space for
                 (el-reader//replace-placeholders (get-buffer "*scratch*"))))
     (should (let ((f "foo")) (eq f (el-reader//replace-placeholders f))))
     
-    ;; (push (vector 1 p1 'error) *el-reader//read-objects*)
+    ;; (push (vector 1 p1 'error) el-reader//*read-objects*)
 
     (elr-test/with-objects
      (should (null (el-reader//replace-placeholders nil)))
@@ -240,7 +240,7 @@ major mode. These regexps are used to determine whether to insert a space for
 
 (ert-deftest elr-internal/test-replace-placeholders-on-cons ()
   "Tests `el-reader//replace-placeholders' on conses."
-  (let ((*el-reader//read-objects* nil))
+  (let ((el-reader//*read-objects* nil))
     (let ((o (cons 'x 'y)))
       (should (eq o (el-reader//replace-placeholders o)))
       (elr-test/with-objects
@@ -248,7 +248,7 @@ major mode. These regexps are used to determine whether to insert a space for
 
 (ert-deftest elr-internal/test-replace-placeholders-on-list ()
   "Tests `el-reader//replace-placeholders' on conses."
-  (let ((*el-reader//read-objects* nil))
+  (let ((el-reader//*read-objects* nil))
     (let ((o (list 'x 'y)))
       (should (eq o (el-reader//replace-placeholders o)))
       (elr-test/with-objects
@@ -256,7 +256,7 @@ major mode. These regexps are used to determine whether to insert a space for
 
 (ert-deftest elr-internal/test-replace-placeholders-on-vector ()
   "Tests `el-reader//replace-placeholders' on conses."
-  (let ((*el-reader//read-objects* nil))
+  (let ((el-reader//*read-objects* nil))
     (let ((o (vector 'x 'y)))
       (should (eq o (el-reader//replace-placeholders o)))
       (elr-test/with-objects
@@ -264,7 +264,7 @@ major mode. These regexps are used to determine whether to insert a space for
 
 (ert-deftest elr-internal/test-replace-placeholders-on-hashmap ()
   "Tests `el-reader//replace-placeholders' on conses."
-  (let ((*el-reader//read-objects* nil))
+  (let ((el-reader//*read-objects* nil))
     (let ((o (make-hash-table)))
       (setf (gethash :x o) :y)
       (should (eq o (el-reader//replace-placeholders o)))
@@ -285,9 +285,9 @@ major mode. These regexps are used to determine whether to insert a space for
                   (cons nil nil)))
         (i 0))
     (let ((h (el-reader//ht (seq-elt ps 0) (seq-elt ps 1))))
-      (push (vector 1 (seq-elt ps 0) (seq-elt ps 2)) *el-reader//read-objects*)
-      (push (vector 2 (seq-elt ps 1) :value) *el-reader//read-objects*)
-      (push (vector 3 (seq-elt ps 2) :some) *el-reader//read-objects*)
+      (push (vector 1 (seq-elt ps 0) (seq-elt ps 2)) el-reader//*read-objects*)
+      (push (vector 2 (seq-elt ps 1) :value) el-reader//*read-objects*)
+      (push (vector 3 (seq-elt ps 2) :some) el-reader//*read-objects*)
 
       (el-reader//replace-placeholders h)
       
@@ -303,7 +303,7 @@ major mode. These regexps are used to determine whether to insert a space for
                        (vector 5 (cons nil nil) nil))))
     (seq-do
      (lambda (trpl)
-       (push trpl *el-reader//read-objects*))
+       (push trpl el-reader//*read-objects*))
      triples)
     (should (equal
              (seq-map
@@ -327,17 +327,17 @@ major mode. These regexps are used to determine whether to insert a space for
                   (cons nil nil)))
         (i 0))
     (let ((h (el-reader//ht (seq-elt ps 0) (seq-elt ps 1))))
-      (push (vector 1 (seq-elt ps 0) (seq-elt ps 2)) *el-reader//read-objects*)
-      (push (vector 2 (seq-elt ps 1) :value) *el-reader//read-objects*)
-      (push (vector 3 (seq-elt ps 2) :some) *el-reader//read-objects*)
+      (push (vector 1 (seq-elt ps 0) (seq-elt ps 2)) el-reader//*read-objects*)
+      (push (vector 2 (seq-elt ps 1) :value) el-reader//*read-objects*)
+      (push (vector 3 (seq-elt ps 2) :some) el-reader//*read-objects*)
 
       (should (eq (el-reader//deep-follow-replacement (seq-elt ps 0)) :some)))))
 
 (ert-deftest elr-internal/test-get-placeholder-replacement ()
   "Sets, then recieves a placeholder object."
-  (let ((*el-reader//read-objects* nil)
+  (let ((el-reader//*read-objects* nil)
         (placeholder (cons nil nil)))
-    (push (vector 1 placeholder nil) *el-reader//read-objects*)
+    (push (vector 1 placeholder nil) el-reader//*read-objects*)
     (should (null (el-reader//get-placeholder-replacement placeholder)))
     (el-reader//set-placeholder placeholder :some-value)
     (should
