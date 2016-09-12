@@ -1399,74 +1399,78 @@ readtable (‘el-reader/*readtable*’) will be used."
 (cl-defun el-reader/read (&optional input-stream (eof-error-p t) eof-value
                                     recursive-p
                                     keys)
-  (let ((res el-reader/*repeat-read*)
-        (input-stream (el-reader//get-getch-state input-stream)))
-    (while (eq res el-reader/*repeat-read*)
-      (setf
-       res
-       (let ((x (condition-case c
-                    (el-reader/getch input-stream)
-                  (end-of-file
-                   (if eof-error-p
-                       (signal (car c) (cdr c))
-                     (cl-return-from el-reader/read eof-value))))))
-         (cond ((el-reader//rt/invalid-syntax-type-p el-reader/*readtable* x)
-                (signal 'reader-error (list "Invalid char" x)))
-               ((el-reader//rt/whitespacep el-reader/*readtable* x)
-                el-reader/*repeat-read*)
-               ((el-reader//rt/terminating-macro-char-p
-                 el-reader/*readtable* x)
-                (let ((el-reader//*allow-single-dot-symbol* nil))
-                  (let ((res (funcall (gethash x (el-reader//rt/term-mac-fns
-                                                  el-reader/*readtable*))
-                                      input-stream x)))
-                    (when (not (listp res))
-                      (error (s-join " " '("Read-macro functions must always"
-                                           "return a (possibly empty) list."))))
-                    res)))
-               ((el-reader//rt/non-terminating-macro-char-p
-                 el-reader/*readtable* x)
-                (let ((el-reader//*allow-single-dot-symbol* nil))
-                  (let ((res (funcall (gethash x (el-reader//rt/non-term-mac-fns
-                                                  el-reader/*readtable*))
-                                      input-stream x)))
-                    (when (not (listp res))
-                      (error (s-join " " '("Read-macro functions must always"
-                                           "return a (possibly empty) list."))))
-                    res)))
-               ((el-reader//rt/single-escape-char-p el-reader/*readtable* x)
-                (cl-values (el-reader//step-8
-                            input-stream
-                            (el-reader//put-escaped-prop
-                             (el-reader//force-alphabetic
-                              (el-reader/getch input-stream)))
-                            x)))
-               ((el-reader//rt/multiple-escape-char-p el-reader/*readtable* x)
-                (cl-values (el-reader//step-9 input-stream "" x)))
-               ((el-reader//rt/constituentp el-reader/*readtable* x)
-                (cl-values (el-reader//step-8 input-stream
-                                              (el-reader//defaults-to-str-props x)
-                                              x)))
-               (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!"))))))
-    (let ((ret-val
-           (if (plist-get keys :return-list)
-               res
-             (if res
-                 (car res)
-               (let ((res))
-                 (while (not res)
-                   (setf res
-                         (el-reader/read
-                          input-stream
-                          eof-error-p
-                          eof-value
-                          recursive-p
-                          '(:return-list t))))
-                 (car res))))))
-      (if (not recursive-p)
-          (prog1 (el-reader//replace-placeholders ret-val)
-            (setf el-reader//*read-objects* nil))        
-        ret-val))))
+  (if (and (not recursive-p) (not (plist-get keys :inner-toplevel)))
+      (let ((el-reader//*read-objects* nil))
+        (el-reader/read input-stream eof-error-p eof-value recursive-p
+                        (plist-put keys :inner-toplevel t)))
+      (let ((res el-reader/*repeat-read*)
+            (in-stream (el-reader//get-getch-state input-stream)))
+        (while (eq res el-reader/*repeat-read*)
+          (setf
+           res
+           (let ((x (condition-case c
+                        (el-reader/getch in-stream)
+                      (end-of-file
+                       (if eof-error-p
+                           (signal (car c) (cdr c))
+                         (cl-return-from el-reader/read eof-value))))))
+             (cond ((el-reader//rt/invalid-syntax-type-p el-reader/*readtable* x)
+                    (signal 'reader-error (list "Invalid char" x)))
+                   ((el-reader//rt/whitespacep el-reader/*readtable* x)
+                    el-reader/*repeat-read*)
+                   ((el-reader//rt/terminating-macro-char-p
+                     el-reader/*readtable* x)
+                    (let ((el-reader//*allow-single-dot-symbol* nil))
+                      (let ((res (funcall (gethash x (el-reader//rt/term-mac-fns
+                                                      el-reader/*readtable*))
+                                          in-stream x)))
+                        (when (not (listp res))
+                          (error (s-join " " '("Read-macro functions must always"
+                                               "return a (possibly empty) list."))))
+                        res)))
+                   ((el-reader//rt/non-terminating-macro-char-p
+                     el-reader/*readtable* x)
+                    (let ((el-reader//*allow-single-dot-symbol* nil))
+                      (let ((res (funcall (gethash x (el-reader//rt/non-term-mac-fns
+                                                      el-reader/*readtable*))
+                                          in-stream x)))
+                        (when (not (listp res))
+                          (error (s-join " " '("Read-macro functions must always"
+                                               "return a (possibly empty) list."))))
+                        res)))
+                   ((el-reader//rt/single-escape-char-p el-reader/*readtable* x)
+                    (cl-values (el-reader//step-8
+                                in-stream
+                                (el-reader//put-escaped-prop
+                                 (el-reader//force-alphabetic
+                                  (el-reader/getch in-stream)))
+                                x)))
+                   ((el-reader//rt/multiple-escape-char-p el-reader/*readtable* x)
+                    (cl-values (el-reader//step-9 in-stream "" x)))
+                   ((el-reader//rt/constituentp el-reader/*readtable* x)
+                    (cl-values (el-reader//step-8 in-stream
+                                                  (el-reader//defaults-to-str-props x)
+                                                  x)))
+                   (t (error "PANIC!!! THIS SHOULD NEVER HAVE HAPPENED!!!"))))))
+        (let ((ret-val
+               (if (plist-get keys :return-list)
+                   res
+                 (if res
+                     (car res)
+                   (let ((res))
+                     (while (not res)
+                       (setf res
+                             (el-reader/read
+                              in-stream
+                              eof-error-p
+                              eof-value
+                              recursive-p
+                              '(:return-list t))))
+                     (car res))))))
+          (if (not recursive-p)
+              (prog1 (el-reader//replace-placeholders ret-val)
+                (setf el-reader//*read-objects* nil))        
+            ret-val)))))
 
 (cl-defun el-reader/read-preserving-whitespace
     (&optional input-stream (eof-error-p t) eof-value recursive-p)
@@ -1481,7 +1485,7 @@ readtable (‘el-reader/*readtable*’) will be used."
   ;; implemented. Also they use a weird function called `get-file-char', which
   ;; does not take an optional argument.
 
-  (if (and use-el-reader (not el-reader-bytecode))
+  (if use-el-reader
       (el-reader/read stream)
     (funcall oldfun stream)))
 

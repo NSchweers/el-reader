@@ -425,6 +425,17 @@ major mode. These regexps are used to determine whether to insert a space for
   (should (= (el-reader/read "#5r01201") #5r01201))
   (should (= (el-reader/read "#6r01201") #6r01201)))
 
+(ert-deftest elr-test/inner-scope ()
+  "Calls an inner toplevel read which should have a new scope for #1# etc."
+  (let ((original (el-reader/get-macro-character ?\{)))
+    (el-reader/set-macro-character ?\{ (lambda (stream _char)
+                                         (cl-values (el-reader/read stream))))
+  
+    (unwind-protect (let ((res (el-reader/read "(#1=:a {(#1=:b #1#) #1#)")))
+                      (pcase res
+                        (`(:a (:b :b) :a) t)))
+      (el-reader/set-macro-character ?\{ (car original) (cadr original)))))
+
 ;; (ert-deftest elr-test/copy-readtable ()
 ;;   "Copies a few readtables with `el-reader/copy-readtable'."
 ;;   (let ((new (make-instance 'el-reader/readtable))
